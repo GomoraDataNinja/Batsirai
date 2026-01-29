@@ -197,7 +197,6 @@ def apply_style():
             color: var(--muted) !important;
         }}
 
-        /* Card headings forced bold (deploy-safe) */
         .card h1, .card h2, .card h3, .card h4,
         .card-soft h1, .card-soft h2, .card-soft h3, .card-soft h4 {{
             font-weight: 900 !important;
@@ -287,7 +286,6 @@ def apply_style():
             fill: var(--text) !important;
         }}
 
-        /* Tabs: centered, spaced out more, enlarged, deploy-safe selectors */
         .stTabs [data-baseweb="tab-list"],
         div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
             display: flex !important;
@@ -597,9 +595,11 @@ def donut_chart(sentiment_counts, title, center_text):
                 hole=0.62,
                 marker=dict(colors=[SENTIMENT_COLORS.get(x, THEME["neutral"]) for x in labels]),
                 textinfo="percent",
+                textfont=dict(color=THEME["text"]),
             )
         ]
     )
+
     fig.update_layout(
         title=dict(text=title, x=0.0, xanchor="left", font=dict(size=16, color=THEME["text"])),
         showlegend=True,
@@ -607,7 +607,17 @@ def donut_chart(sentiment_counts, title, center_text):
         plot_bgcolor="#ffffff",
         font=dict(color=THEME["text"]),
         margin=dict(l=10, r=10, t=55, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=-0.12, xanchor="left", x=0),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.12,
+            xanchor="left",
+            x=0,
+            font=dict(size=13, color=THEME["text"]),
+            bgcolor="rgba(255,255,255,1)",
+            bordercolor=THEME["border2"],
+            borderwidth=1,
+        ),
         annotations=[
             dict(
                 text=center_text,
