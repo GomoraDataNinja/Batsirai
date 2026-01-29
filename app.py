@@ -27,13 +27,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-
 def safe_rerun():
     if hasattr(st, "rerun"):
         st.rerun()
     elif hasattr(st, "experimental_rerun"):
         st.experimental_rerun()
-
 
 def get_org_password():
     env_pw = os.environ.get("APP_PASSWORD", "").strip()
@@ -46,7 +44,6 @@ def get_org_password():
     except Exception:
         pass
     return "youtube2024"
-
 
 ORG_PASSWORD = get_org_password()
 
@@ -70,7 +67,6 @@ SENTIMENT_COLORS = {
     "Neutral": THEME["neutral"],
     "Negative": THEME["bad"],
 }
-
 
 def apply_style():
     st.markdown(
@@ -201,6 +197,7 @@ def apply_style():
             color: var(--muted) !important;
         }}
 
+        /* Card headings forced bold (deploy-safe) */
         .card h1, .card h2, .card h3, .card h4,
         .card-soft h1, .card-soft h2, .card-soft h3, .card-soft h4 {{
             font-weight: 900 !important;
@@ -290,6 +287,7 @@ def apply_style():
             fill: var(--text) !important;
         }}
 
+        /* Tabs: centered, spaced out more, enlarged, deploy-safe selectors */
         .stTabs [data-baseweb="tab-list"],
         div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
             display: flex !important;
@@ -341,13 +339,10 @@ def apply_style():
         unsafe_allow_html=True,
     )
 
-
 apply_style()
-
 
 def touch():
     st.session_state.last_activity = datetime.now()
-
 
 def is_timed_out():
     last = st.session_state.get("last_activity")
@@ -355,12 +350,10 @@ def is_timed_out():
         return False
     return (datetime.now() - last).total_seconds() > SESSION_TIMEOUT_MINUTES * 60
 
-
 def logout():
     for k in list(st.session_state.keys()):
         del st.session_state[k]
     safe_rerun()
-
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -372,7 +365,6 @@ if "topic_results" not in st.session_state:
     st.session_state.topic_results = None
 if "topic_query" not in st.session_state:
     st.session_state.topic_query = ""
-
 
 def login_screen():
     st.markdown('<div style="height: 1.8rem;"></div>', unsafe_allow_html=True)
@@ -406,7 +398,6 @@ def login_screen():
             else:
                 st.error("Wrong password.")
 
-
 if st.session_state.authenticated and is_timed_out():
     st.session_state.authenticated = False
     st.warning("Session timed out. Sign in again.")
@@ -418,7 +409,6 @@ if not st.session_state.authenticated:
     st.stop()
 
 touch()
-
 
 def youtube_client():
     try:
@@ -432,18 +422,14 @@ def youtube_client():
 
     return build("youtube", "v3", developerKey=str(api_key).strip())
 
-
-STOPWORDS = set(
-    """
+STOPWORDS = set("""
 a about above after again against all am an and any are as at be because been before being below between both but by
 can did do does doing down during each few for from further had has have having he her here hers herself him himself
 his how i if in into is it its itself just me more most my myself no nor not of off on once only or other our ours
 ourselves out over own same she should so some such than that the their theirs them themselves then there these they
 this those through to too under until up very was we were what when where which while who whom why will with you your
 yours yourself yourselves
-""".split()
-)
-
+""".split())
 
 def shorten(text, n=160):
     s = str(text or "").strip()
@@ -451,7 +437,6 @@ def shorten(text, n=160):
     if len(s) <= n:
         return s
     return s[:n].rstrip() + "..."
-
 
 def clean_tokens(text: str):
     text = str(text or "").lower()
@@ -461,14 +446,12 @@ def clean_tokens(text: str):
     parts = [p for p in parts if p not in STOPWORDS and len(p) > 2]
     return parts
 
-
 def jaccard_similarity(a_tokens, b_tokens):
     a = set(a_tokens)
     b = set(b_tokens)
     if not a or not b:
         return 0.0
     return len(a.intersection(b)) / max(1, len(a.union(b)))
-
 
 def minmax(series: pd.Series):
     s = pd.to_numeric(series, errors="coerce").fillna(0.0)
@@ -478,13 +461,11 @@ def minmax(series: pd.Series):
         return pd.Series([0.0] * len(s), index=s.index)
     return (s - mn) / (mx - mn)
 
-
 def parse_published_at(s):
     try:
         return pd.to_datetime(s, errors="coerce", utc=True)
     except Exception:
         return pd.NaT
-
 
 def get_video_comments(youtube, video_id, max_comments=150):
     all_comments = []
@@ -527,7 +508,6 @@ def get_video_comments(youtube, video_id, max_comments=150):
 
     return all_comments
 
-
 def analyze_sentiment_comment(text):
     score = TextBlob(str(text)).sentiment.polarity
     if score > 0.1:
@@ -537,7 +517,6 @@ def analyze_sentiment_comment(text):
     else:
         label = "Neutral"
     return score, label
-
 
 def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", published_after=None, region_code=None):
     results = []
@@ -583,7 +562,6 @@ def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", pub
 
     return results
 
-
 def fetch_video_stats(youtube, video_ids):
     out = {}
     for i in range(0, len(video_ids), 50):
@@ -607,7 +585,6 @@ def fetch_video_stats(youtube, video_ids):
             continue
     return out
 
-
 def donut_chart(sentiment_counts, title, center_text):
     labels = list(sentiment_counts.index)
     values = list(sentiment_counts.values)
@@ -626,8 +603,8 @@ def donut_chart(sentiment_counts, title, center_text):
     fig.update_layout(
         title=dict(text=title, x=0.0, xanchor="left", font=dict(size=16, color=THEME["text"])),
         showlegend=True,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
         font=dict(color=THEME["text"]),
         margin=dict(l=10, r=10, t=55, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=-0.12, xanchor="left", x=0),
@@ -642,7 +619,6 @@ def donut_chart(sentiment_counts, title, center_text):
         ],
     )
     return fig
-
 
 def build_reasons(row):
     reasons = []
@@ -672,7 +648,6 @@ def build_reasons(row):
 
     return reasons[:4]
 
-
 def extract_phrases_from_text(text: str):
     t = str(text or "").strip()
     if not t:
@@ -695,7 +670,6 @@ def extract_phrases_from_text(text: str):
             continue
         cleaned.append(p)
     return cleaned
-
 
 def build_theme_points(dfc: pd.DataFrame, label: str = None, top_k: int = 4):
     if dfc is None or dfc.empty:
@@ -756,7 +730,6 @@ def build_theme_points(dfc: pd.DataFrame, label: str = None, top_k: int = 4):
 
     return points
 
-
 def normalize_question(text: str):
     s = str(text or "").strip().lower()
     s = re.sub(r"http\S+|www\.\S+", " ", s)
@@ -766,7 +739,6 @@ def normalize_question(text: str):
     if not s.endswith("?") and "?" in s:
         s = s.replace("?", "").strip() + "?"
     return s
-
 
 def build_question_points(dfc: pd.DataFrame, top_k: int = 5):
     if dfc is None or dfc.empty:
@@ -816,7 +788,6 @@ def build_question_points(dfc: pd.DataFrame, top_k: int = 5):
 
     return out
 
-
 def build_final_answer(res: dict):
     dv = res.get("videos_df")
     dc = res.get("comments_df")
@@ -838,6 +809,7 @@ def build_final_answer(res: dict):
     top_url = str(top_pick.get("video_url", "")).strip()
 
     bullets = []
+    overall = None
 
     if dc is None or dc.empty:
         bullets.append(f"I scanned {scanned} videos for this topic.")
@@ -880,9 +852,7 @@ def build_final_answer(res: dict):
     neg_points = build_theme_points(dc, label="Negative", top_k=3)
     q_points = build_question_points(dc, top_k=5)
 
-    overall = {
-        "sentiment_counts": pd.Series({"Positive": pos, "Neutral": neu, "Negative": neg}),
-    }
+    overall = {"sentiment_counts": pd.Series({"Positive": pos, "Neutral": neu, "Negative": neg})}
 
     return {
         "headline": f"What this topic looks like on YouTube: {topic}",
@@ -891,7 +861,6 @@ def build_final_answer(res: dict):
         "top_pick": {"title": top_title, "channel": top_channel, "url": top_url},
         "themes": {"common": common_points, "positive": pos_points, "negative": neg_points, "questions": q_points},
     }
-
 
 def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window_days, region_code):
     yt = youtube_client()
@@ -940,17 +909,15 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
 
         comments = get_video_comments(yt, vid, max_comments=comments_per_video)
 
-        dfc = pd.DataFrame(comments) if comments else pd.DataFrame(
-            columns=["video_id", "comment", "published_at", "like_count", "author"]
-        )
+        dfc = pd.DataFrame(comments) if comments else pd.DataFrame(columns=["video_id", "comment", "published_at", "like_count", "author"])
         if not dfc.empty:
             dfc["published_at"] = pd.to_datetime(dfc["published_at"], errors="coerce", utc=True)
             scores = []
             labels = []
             for txt in dfc["comment"].astype(str).tolist():
-                scv, lb = analyze_sentiment_comment(txt)
-                scores.append(scv)
-                labels.append(lb)
+                sc0, lb0 = analyze_sentiment_comment(txt)
+                scores.append(sc0)
+                labels.append(lb0)
             dfc["sentiment_score"] = scores
             dfc["sentiment"] = labels
             comment_rows.extend(dfc.to_dict("records"))
@@ -978,8 +945,8 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         top_keywords = ""
         if n_comments_sampled > 0:
             all_tokens = []
-            for t in dfc["comment"].astype(str).tolist()[: min(300, n_comments_sampled)]:
-                all_tokens.extend(clean_tokens(t))
+            for t0 in dfc["comment"].astype(str).tolist()[: min(300, n_comments_sampled)]:
+                all_tokens.extend(clean_tokens(t0))
             if all_tokens:
                 vc = pd.Series(all_tokens).value_counts().head(5)
                 top_keywords = ", ".join(vc.index.tolist())
@@ -1047,15 +1014,12 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
     res = {
         "topic": topic,
         "videos_df": dv,
-        "comments_df": pd.DataFrame(comment_rows)
-        if comment_rows
-        else pd.DataFrame(columns=["video_id", "comment", "published_at", "like_count", "author", "sentiment_score", "sentiment"]),
+        "comments_df": pd.DataFrame(comment_rows) if comment_rows else pd.DataFrame(columns=["video_id", "comment", "published_at", "like_count", "author", "sentiment_score", "sentiment"]),
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
     res["final_answer"] = build_final_answer(res)
     return res
-
 
 st.markdown(
     f"""
@@ -1180,20 +1144,11 @@ with tabs[1]:
 
     m1, m2, m3 = st.columns(3)
     with m1:
-        st.markdown(
-            f"<div class='metric'><div class='metric-k'>Scanned</div><div class='metric-v'>{total_scanned}</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<div class='metric'><div class='metric-k'>Scanned</div><div class='metric-v'>{total_scanned}</div></div>", unsafe_allow_html=True)
     with m2:
-        st.markdown(
-            f"<div class='metric'><div class='metric-k'>Avg sentiment</div><div class='metric-v'>{avg_sent:.2f}</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<div class='metric'><div class='metric-k'>Avg sentiment</div><div class='metric-v'>{avg_sent:.2f}</div></div>", unsafe_allow_html=True)
     with m3:
-        st.markdown(
-            f"<div class='metric'><div class='metric-k'>Generated</div><div class='metric-v'>{res['generated_at']}</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<div class='metric'><div class='metric-k'>Generated</div><div class='metric-v'>{res['generated_at']}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
 
@@ -1400,18 +1355,29 @@ with tabs[2]:
     st.markdown("")
 
     left, right = st.columns([1.1, 1])
+
     with left:
         dv2 = dv.head(30).copy()
-        fig = px.bar(dv2, x="title", y="final_score", title="Top scores (first 30)")
-        fig.update_layout(
-            xaxis_title="Video",
-            yaxis_title="Score",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color=THEME["text"]),
-            title_font=dict(color=THEME["text"]),
-            xaxis=dict(tickfont=dict(size=10)),
+        dv2["title_short"] = dv2["title"].astype(str).apply(lambda x: (x[:55] + "...") if len(x) > 55 else x)
+
+        fig = px.bar(
+            dv2.sort_values("final_score", ascending=True),
+            x="final_score",
+            y="title_short",
+            orientation="h",
+            title="Top scores (first 30)",
         )
+        fig.update_layout(
+            height=520,
+            paper_bgcolor="#ffffff",
+            plot_bgcolor="#ffffff",
+            font=dict(color=THEME["text"], size=13),
+            title_font=dict(color=THEME["text"], size=16),
+            margin=dict(l=10, r=10, t=60, b=20),
+        )
+        fig.update_xaxes(title="Score", showgrid=True, tickfont=dict(size=12, color=THEME["text"]))
+        fig.update_yaxes(title="Video", showgrid=False, tickfont=dict(size=12, color=THEME["text"]))
+
         st.plotly_chart(fig, use_container_width=True, key="explore_top_scores_bar")
 
     with right:
@@ -1438,6 +1404,7 @@ with tabs[2]:
         "Video",
         options=dv["video_id"].tolist(),
         format_func=lambda x: dv.loc[dv["video_id"] == x, "title"].values[0][:80],
+        key="explore_video_pick",
     )
 
     row = dv[dv["video_id"] == pick].iloc[0].to_dict()
@@ -1445,25 +1412,13 @@ with tabs[2]:
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
-        st.markdown(
-            f"<div class='metric'><div class='metric-k'>Views</div><div class='metric-v'>{int(row.get('views',0)):,}</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<div class='metric'><div class='metric-k'>Views</div><div class='metric-v'>{int(row.get('views',0)):,}</div></div>", unsafe_allow_html=True)
     with k2:
-        st.markdown(
-            f"<div class='metric'><div class='metric-k'>Likes</div><div class='metric-v'>{int(row.get('likes',0)):,}</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<div class='metric'><div class='metric-k'>Likes</div><div class='metric-v'>{int(row.get('likes',0)):,}</div></div>", unsafe_allow_html=True)
     with k3:
-        st.markdown(
-            f"<div class='metric'><div class='metric-k'>Comments</div><div class='metric-v'>{int(row.get('comment_count',0)):,}</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<div class='metric'><div class='metric-k'>Comments</div><div class='metric-v'>{int(row.get('comment_count',0)):,}</div></div>", unsafe_allow_html=True)
     with k4:
-        st.markdown(
-            f"<div class='metric'><div class='metric-k'>Rank</div><div class='metric-v'>{int(row.get('rank',0))}</div></div>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"<div class='metric'><div class='metric-k'>Rank</div><div class='metric-v'>{int(row.get('rank',0))}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
     st.markdown(f"<div class='muted' style='font-size:12px;'>Link: {html.escape(str(v_url))}</div>", unsafe_allow_html=True)
@@ -1482,14 +1437,16 @@ with tabs[2]:
                     "Filter sentiment",
                     options=["Positive", "Neutral", "Negative"],
                     default=["Positive", "Neutral", "Negative"],
+                    key="explore_sent_filter",
                 )
             with f2:
                 sort_by = st.selectbox(
                     "Sort by",
                     options=["Newest", "Oldest", "Most Likes", "Highest Sentiment", "Lowest Sentiment"],
+                    key="explore_sort_by",
                 )
             with f3:
-                n_show = st.slider("Rows", 10, 80, 20)
+                n_show = st.slider("Rows", 10, 80, 20, key="explore_rows")
 
             dcv = dcv[dcv["sentiment"].isin(sentiment_filter)]
             mapping = {
