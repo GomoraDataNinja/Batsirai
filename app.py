@@ -258,34 +258,7 @@ def apply_style():
             fill: var(--text) !important;
         }}
 
-        div[data-baseweb="popover"] {{
-            background: #ffffff !important;
-            border: 1px solid var(--border2) !important;
-            box-shadow: 0 12px 28px rgba(0,0,0,0.10) !important;
-        }}
-
-        ul[role="listbox"] {{
-            background: #ffffff !important;
-        }}
-
-        ul[role="listbox"] li {{
-            background: #ffffff !important;
-            color: var(--text) !important;
-        }}
-
-        ul[role="listbox"] li:hover {{
-            background: rgba(215,30,40,0.08) !important;
-        }}
-
-        span[data-baseweb="tag"] {{
-            background: rgba(215,30,40,0.12) !important;
-            border: 1px solid rgba(215,30,40,0.25) !important;
-            color: var(--text) !important;
-        }}
-        span[data-baseweb="tag"] svg {{
-            fill: var(--text) !important;
-        }}
-
+        /* Tabs */
         .stTabs [data-baseweb="tab-list"],
         div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
             display: flex !important;
@@ -324,6 +297,74 @@ def apply_style():
             overflow: hidden !important;
         }}
 
+        /* Tightened dropdown + popover overrides (kills black background on deploy) */
+        div[data-baseweb="popover"],
+        div[data-baseweb="popover"] > div,
+        div[data-baseweb="popover"] > div > div,
+        div[data-baseweb="layer"],
+        div[data-baseweb="layer"] > div,
+        div[data-baseweb="menu"],
+        div[data-baseweb="menu"] > div,
+        div[data-baseweb="menu"] > div > div {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+            border: 1px solid var(--border2) !important;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.10) !important;
+        }}
+
+        div[role="listbox"],
+        ul[role="listbox"],
+        div[role="listbox"] * ,
+        ul[role="listbox"] * {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+        }}
+
+        li[role="option"],
+        div[role="option"],
+        li[role="option"] * ,
+        div[role="option"] * {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+        }}
+
+        li[role="option"]:hover,
+        div[role="option"]:hover {{
+            background: rgba(215,30,40,0.08) !important;
+        }}
+
+        li[role="option"][aria-selected="true"],
+        div[role="option"][aria-selected="true"] {{
+            background: rgba(215,30,40,0.12) !important;
+        }}
+
+        /* Make sure dropdown text never inherits a dark theme */
+        div[data-baseweb="popover"] span,
+        div[data-baseweb="popover"] div,
+        div[data-baseweb="popover"] p,
+        div[data-baseweb="menu"] span,
+        div[data-baseweb="menu"] div,
+        div[data-baseweb="menu"] p {{
+            color: var(--text) !important;
+        }}
+
+        /* Scrollbar area in popovers also stays white */
+        div[data-baseweb="popover"] [style*="background"],
+        div[data-baseweb="menu"] [style*="background"] {{
+            background: #ffffff !important;
+        }}
+
+        /* Links: consistent and readable */
+        a, a:visited {{
+            color: var(--accent) !important;
+            text-decoration: none !important;
+            font-weight: 750 !important;
+        }}
+        a:hover {{
+            color: var(--accent2) !important;
+            text-decoration: underline !important;
+        }}
+
         @media (max-width: 820px) {{
             .stTabs [data-baseweb="tab"],
             div[data-testid="stTabs"] [data-baseweb="tab"] {{
@@ -331,52 +372,6 @@ def apply_style():
                 padding: 12px 14px !important;
                 font-size: 14px !important;
             }}
-        }}
-
-        /* ===== HARD FIX: deployed dropdown popovers turning black ===== */
-        div[data-baseweb="popover"],
-        div[data-baseweb="popover"] > div,
-        div[data-baseweb="popover"] > div > div {{
-            background: #ffffff !important;
-            color: var(--text) !important;
-            border-color: var(--border2) !important;
-        }}
-
-        div[data-baseweb="menu"],
-        div[data-baseweb="menu"] * {{
-            background: #ffffff !important;
-            color: var(--text) !important;
-        }}
-
-        div[role="listbox"],
-        div[role="listbox"] *,
-        ul[role="listbox"],
-        ul[role="listbox"] *,
-        li[role="option"],
-        div[role="option"] {{
-            background: #ffffff !important;
-            color: var(--text) !important;
-        }}
-
-        li[role="option"]:hover,
-        div[role="option"]:hover,
-        ul[role="listbox"] li:hover {{
-            background: rgba(215,30,40,0.08) !important;
-        }}
-
-        li[role="option"][aria-selected="true"],
-        div[role="option"][aria-selected="true"],
-        ul[role="listbox"] li[aria-selected="true"] {{
-            background: rgba(215,30,40,0.12) !important;
-            color: var(--text) !important;
-        }}
-
-        div[data-baseweb="popover"] input,
-        div[data-baseweb="popover"] span,
-        div[data-baseweb="popover"] li,
-        div[data-baseweb="popover"] div {{
-            color: var(--text) !important;
-            -webkit-text-fill-color: var(--text) !important;
         }}
         </style>
         """,
@@ -482,8 +477,8 @@ def shorten(text, n=160):
 
 def clean_tokens(text: str):
     text = str(text or "").lower()
-    text = re.sub(r"http\S+|www\.\S+", " ", text)
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"http\\S+|www\\.\\S+", " ", text)
+    text = re.sub(r"[^a-z0-9\\s]", " ", text)
     parts = [p.strip() for p in text.split() if p.strip()]
     parts = [p for p in parts if p not in STOPWORDS and len(p) > 2]
     return parts
@@ -712,8 +707,8 @@ def extract_phrases_from_text(text: str):
         phrases = []
     cleaned = []
     for p in phrases:
-        p = re.sub(r"[^a-z0-9\s]", " ", p)
-        p = re.sub(r"\s+", " ", p).strip()
+        p = re.sub(r"[^a-z0-9\\s]", " ", p)
+        p = re.sub(r"\\s+", " ", p).strip()
         if not p:
             continue
         if len(p) < 3:
@@ -770,14 +765,7 @@ def build_theme_points(dfc: pd.DataFrame, label: str = None, top_k: int = 4):
         else:
             sentence = f"People keep mentioning {ph}."
 
-        points.append(
-            {
-                "sentence": sentence,
-                "pct": pct,
-                "count": cnt,
-                "example": ex,
-            }
-        )
+        points.append({"sentence": sentence, "pct": pct, "count": cnt, "example": ex})
 
         if len(points) >= top_k:
             break
@@ -786,10 +774,10 @@ def build_theme_points(dfc: pd.DataFrame, label: str = None, top_k: int = 4):
 
 def normalize_question(text: str):
     s = str(text or "").strip().lower()
-    s = re.sub(r"http\S+|www\.\S+", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    s = re.sub(r"[^a-z0-9\?\s]", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"http\\S+|www\\.\\S+", " ", s)
+    s = re.sub(r"\\s+", " ", s).strip()
+    s = re.sub(r"[^a-z0-9\\?\\s]", " ", s)
+    s = re.sub(r"\\s+", " ", s).strip()
     if not s.endswith("?") and "?" in s:
         s = s.replace("?", "").strip() + "?"
     return s
@@ -800,7 +788,7 @@ def build_question_points(dfc: pd.DataFrame, top_k: int = 5):
 
     df = dfc.copy()
     df["comment_str"] = df["comment"].astype(str)
-    qdf = df[df["comment_str"].str.contains(r"\?", regex=True, na=False)].copy()
+    qdf = df[df["comment_str"].str.contains(r"\\?", regex=True, na=False)].copy()
     if qdf.empty:
         return []
 
@@ -829,14 +817,7 @@ def build_question_points(dfc: pd.DataFrame, top_k: int = 5):
     for q, cnt in items:
         pct = (cnt / max(1, total_all)) * 100.0
         ex = shorten(example.get(q, q), 150)
-        out.append(
-            {
-                "sentence": "People keep asking: " + q,
-                "pct": pct,
-                "count": cnt,
-                "example": ex,
-            }
-        )
+        out.append({"sentence": "People keep asking: " + q, "pct": pct, "count": cnt, "example": ex})
         if len(out) >= top_k:
             break
 
@@ -863,7 +844,6 @@ def build_final_answer(res: dict):
     top_url = str(top_pick.get("video_url", "")).strip()
 
     bullets = []
-    overall = None
 
     if dc is None or dc.empty:
         bullets.append(f"I scanned {scanned} videos for this topic.")
@@ -1278,17 +1258,15 @@ with tabs[1]:
         render_points("People keep asking", themes.get("questions", []))
 
         if top_pick and str(top_pick.get("url", "")).strip():
-            safe_url = html.escape(top_pick.get("url", ""))
+            u = html.escape(top_pick.get("url", ""))
             st.markdown(
                 f"""
                 <div class="card-soft" style="margin-top: 12px;">
                     <div style="font-weight:800;">Best pick right now</div>
                     <div class="subtitle" style="margin-top:6px;">{html.escape(top_pick.get('title',''))}</div>
                     <div class="muted" style="font-size:13px; margin-top:4px;">{html.escape(top_pick.get('channel',''))}</div>
-                    <div class="muted" style="font-size:12px; margin-top:10px;">
-                        <a href="{safe_url}" target="_blank" style="color:{THEME['accent']}; font-weight:750; text-decoration:none;">
-                            Open on YouTube
-                        </a>
+                    <div style="margin-top:10px; font-size:12.5px;">
+                        <a href="{u}" target="_blank" rel="noopener">Open on YouTube</a>
                     </div>
                 </div>
                 """,
@@ -1379,7 +1357,9 @@ with tabs[1]:
                 </div>
                 <div class="muted" style="margin-top:6px; font-size:13px;">{channel}</div>
                 <div style="margin-top:10px; line-height:1.6; font-size:13px; white-space:pre-wrap;">{html.escape(str(reasons))}</div>
-                <div class="muted" style="margin-top:10px; font-size:12px;">{url}</div>
+                <div style="margin-top:10px; font-size:12.5px;">
+                    <a href="{url}" target="_blank" rel="noopener">Open on YouTube</a>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1467,7 +1447,8 @@ with tabs[2]:
     )
 
     row = dv[dv["video_id"] == pick].iloc[0].to_dict()
-    v_url = row.get("video_url", "")
+    v_url = str(row.get("video_url", "")).strip()
+    v_url_safe = html.escape(v_url)
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
@@ -1480,13 +1461,16 @@ with tabs[2]:
         st.markdown(f"<div class='metric'><div class='metric-k'>Rank</div><div class='metric-v'>{int(row.get('rank',0))}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
-    if str(v_url).strip():
+    if v_url:
         st.markdown(
-            f"<div class='muted' style='font-size:12px;'>Link: <a href='{html.escape(str(v_url))}' target='_blank' style='color:{THEME['accent']}; font-weight:750; text-decoration:none;'>Open on YouTube</a></div>",
+            f"""
+            <div class="card-soft">
+                <div style="font-weight:800;">Video link</div>
+                <div style="margin-top:8px;"><a href="{v_url_safe}" target="_blank" rel="noopener">Open on YouTube</a></div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
-    else:
-        st.markdown(f"<div class='muted' style='font-size:12px;'>Link: N/A</div>", unsafe_allow_html=True)
     st.markdown("")
 
     if dc.empty:
