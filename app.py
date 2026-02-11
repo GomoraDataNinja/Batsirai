@@ -264,31 +264,17 @@ def apply_style():
             box-shadow: 0 12px 28px rgba(0,0,0,0.10) !important;
         }}
 
-        /* Fix dropdown black background on deploy (menus / listboxes rendered in portal) */
-        div[data-baseweb="menu"],
-        div[data-baseweb="menu"] ul,
-        div[data-baseweb="menu"] li,
-        ul[role="listbox"],
-        ul[role="listbox"] li,
-        [role="option"] {{
+        ul[role="listbox"] {{
+            background: #ffffff !important;
+        }}
+
+        ul[role="listbox"] li {{
             background: #ffffff !important;
             color: var(--text) !important;
         }}
 
-        div[data-baseweb="menu"] li:hover,
-        ul[role="listbox"] li:hover,
-        [role="option"]:hover {{
+        ul[role="listbox"] li:hover {{
             background: rgba(215,30,40,0.08) !important;
-        }}
-
-        div[data-baseweb="menu"] li[aria-selected="true"],
-        ul[role="listbox"] li[aria-selected="true"],
-        [role="option"][aria-selected="true"] {{
-            background: rgba(215,30,40,0.12) !important;
-        }}
-
-        div[data-baseweb="menu"] * {{
-            color: var(--text) !important;
         }}
 
         span[data-baseweb="tag"] {{
@@ -338,16 +324,6 @@ def apply_style():
             overflow: hidden !important;
         }}
 
-        /* Best pick link styling */
-        a.batsirai-link {{
-            color: var(--accent) !important;
-            text-decoration: underline !important;
-            font-weight: 750 !important;
-        }}
-        a.batsirai-link:hover {{
-            color: var(--accent2) !important;
-        }}
-
         @media (max-width: 820px) {{
             .stTabs [data-baseweb="tab"],
             div[data-testid="stTabs"] [data-baseweb="tab"] {{
@@ -355,6 +331,52 @@ def apply_style():
                 padding: 12px 14px !important;
                 font-size: 14px !important;
             }}
+        }}
+
+        /* ===== HARD FIX: deployed dropdown popovers turning black ===== */
+        div[data-baseweb="popover"],
+        div[data-baseweb="popover"] > div,
+        div[data-baseweb="popover"] > div > div {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+            border-color: var(--border2) !important;
+        }}
+
+        div[data-baseweb="menu"],
+        div[data-baseweb="menu"] * {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+        }}
+
+        div[role="listbox"],
+        div[role="listbox"] *,
+        ul[role="listbox"],
+        ul[role="listbox"] *,
+        li[role="option"],
+        div[role="option"] {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+        }}
+
+        li[role="option"]:hover,
+        div[role="option"]:hover,
+        ul[role="listbox"] li:hover {{
+            background: rgba(215,30,40,0.08) !important;
+        }}
+
+        li[role="option"][aria-selected="true"],
+        div[role="option"][aria-selected="true"],
+        ul[role="listbox"] li[aria-selected="true"] {{
+            background: rgba(215,30,40,0.12) !important;
+            color: var(--text) !important;
+        }}
+
+        div[data-baseweb="popover"] input,
+        div[data-baseweb="popover"] span,
+        div[data-baseweb="popover"] li,
+        div[data-baseweb="popover"] div {{
+            color: var(--text) !important;
+            -webkit-text-fill-color: var(--text) !important;
         }}
         </style>
         """,
@@ -396,9 +418,7 @@ def login_screen():
             f"""
             <div class="card" style="margin-top: 10vh;">
                 <div class="title" style="text-align:center;">{APP_NAME}</div>
-                <div class="subtitle" style="text-align:center;">
-                    Sign in to continue.
-                </div>
+                <div class="subtitle" style="text-align:center;">Sign in to continue.</div>
                 <div style="height: 14px;"></div>
                 <div style="display:flex; justify-content:center;">
                     <div class="chip"><span class="chip-dot"></span> Version {APP_VERSION} • {DEPLOYMENT_MODE.title()}</div>
@@ -750,7 +770,14 @@ def build_theme_points(dfc: pd.DataFrame, label: str = None, top_k: int = 4):
         else:
             sentence = f"People keep mentioning {ph}."
 
-        points.append({"sentence": sentence, "pct": pct, "count": cnt, "example": ex})
+        points.append(
+            {
+                "sentence": sentence,
+                "pct": pct,
+                "count": cnt,
+                "example": ex,
+            }
+        )
 
         if len(points) >= top_k:
             break
@@ -802,7 +829,14 @@ def build_question_points(dfc: pd.DataFrame, top_k: int = 5):
     for q, cnt in items:
         pct = (cnt / max(1, total_all)) * 100.0
         ex = shorten(example.get(q, q), 150)
-        out.append({"sentence": "People keep asking: " + q, "pct": pct, "count": cnt, "example": ex})
+        out.append(
+            {
+                "sentence": "People keep asking: " + q,
+                "pct": pct,
+                "count": cnt,
+                "example": ex,
+            }
+        )
         if len(out) >= top_k:
             break
 
@@ -1244,17 +1278,17 @@ with tabs[1]:
         render_points("People keep asking", themes.get("questions", []))
 
         if top_pick and str(top_pick.get("url", "")).strip():
-            tp_title = html.escape(top_pick.get("title", ""))
-            tp_channel = html.escape(top_pick.get("channel", ""))
-            tp_url = html.escape(top_pick.get("url", ""))
+            safe_url = html.escape(top_pick.get("url", ""))
             st.markdown(
                 f"""
                 <div class="card-soft" style="margin-top: 12px;">
                     <div style="font-weight:800;">Best pick right now</div>
-                    <div class="subtitle" style="margin-top:6px;">{tp_title}</div>
-                    <div class="muted" style="font-size:13px; margin-top:4px;">{tp_channel}</div>
+                    <div class="subtitle" style="margin-top:6px;">{html.escape(top_pick.get('title',''))}</div>
+                    <div class="muted" style="font-size:13px; margin-top:4px;">{html.escape(top_pick.get('channel',''))}</div>
                     <div class="muted" style="font-size:12px; margin-top:10px;">
-                        <a class="batsirai-link" href="{tp_url}" target="_blank" rel="noopener noreferrer">{tp_url}</a>
+                        <a href="{safe_url}" target="_blank" style="color:{THEME['accent']}; font-weight:750; text-decoration:none;">
+                            Open on YouTube
+                        </a>
                     </div>
                 </div>
                 """,
@@ -1446,15 +1480,13 @@ with tabs[2]:
         st.markdown(f"<div class='metric'><div class='metric-k'>Rank</div><div class='metric-v'>{int(row.get('rank',0))}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
-    st.markdown(
-        f"""
-        <div class='muted' style='font-size:12px;'>
-            Link:
-            <a class="batsirai-link" href="{html.escape(str(v_url))}" target="_blank" rel="noopener noreferrer">{html.escape(str(v_url))}</a>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    if str(v_url).strip():
+        st.markdown(
+            f"<div class='muted' style='font-size:12px;'>Link: <a href='{html.escape(str(v_url))}' target='_blank' style='color:{THEME['accent']}; font-weight:750; text-decoration:none;'>Open on YouTube</a></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(f"<div class='muted' style='font-size:12px;'>Link: N/A</div>", unsafe_allow_html=True)
     st.markdown("")
 
     if dc.empty:
