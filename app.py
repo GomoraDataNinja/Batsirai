@@ -87,6 +87,11 @@ def apply_style():
             --neutral: {THEME['neutral']};
         }}
 
+        /* Force "light" behavior even when browser/OS prefers dark */
+        html {{
+            color-scheme: light !important;
+        }}
+
         html, body, [data-testid="stAppViewContainer"], .stApp {{
             background: var(--bg) !important;
             color: var(--text) !important;
@@ -297,34 +302,48 @@ def apply_style():
             overflow: hidden !important;
         }}
 
-        /* Tightened dropdown + popover overrides (kills black background on deploy) */
-        div[data-baseweb="popover"],
-        div[data-baseweb="popover"] > div,
-        div[data-baseweb="popover"] > div > div,
+        /* ===== Ultra locked popover/dropdown/date picker/menu/tooltip styling (kills black background on deploy) ===== */
+
+        /* BaseWeb portals / layers */
         div[data-baseweb="layer"],
-        div[data-baseweb="layer"] > div,
+        div[data-baseweb="layer"] > div {{
+            background: transparent !important;
+            color: var(--text) !important;
+        }}
+
+        /* Popover shells */
+        div[data-baseweb="popover"],
+        div[data-baseweb="popover"] > div {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+            border-radius: 14px !important;
+            border: 1px solid var(--border2) !important;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.10) !important;
+        }}
+
+        /* Menu container inside popovers */
         div[data-baseweb="menu"],
         div[data-baseweb="menu"] > div,
         div[data-baseweb="menu"] > div > div {{
             background: #ffffff !important;
             color: var(--text) !important;
-            border: 1px solid var(--border2) !important;
-            box-shadow: 0 12px 28px rgba(0,0,0,0.10) !important;
         }}
 
-        div[role="listbox"],
+        /* Listbox + options (Selectbox, Multiselect, etc) */
         ul[role="listbox"],
-        div[role="listbox"] * ,
-        ul[role="listbox"] * {{
+        div[role="listbox"] {{
             background: #ffffff !important;
             color: var(--text) !important;
         }}
 
         li[role="option"],
-        div[role="option"],
+        div[role="option"] {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+        }}
+
         li[role="option"] * ,
         div[role="option"] * {{
-            background: #ffffff !important;
             color: var(--text) !important;
         }}
 
@@ -338,7 +357,24 @@ def apply_style():
             background: rgba(215,30,40,0.12) !important;
         }}
 
-        /* Make sure dropdown text never inherits a dark theme */
+        /* Tooltips */
+        div[data-baseweb="tooltip"],
+        div[data-baseweb="tooltip"] > div {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+            border: 1px solid var(--border2) !important;
+            border-radius: 12px !important;
+            box-shadow: 0 10px 22px rgba(0,0,0,0.10) !important;
+        }}
+
+        /* Date picker / calendar */
+        div[data-baseweb="calendar"],
+        div[data-baseweb="calendar"] * {{
+            background: #ffffff !important;
+            color: var(--text) !important;
+        }}
+
+        /* Ensure dropdown text never inherits a dark theme */
         div[data-baseweb="popover"] span,
         div[data-baseweb="popover"] div,
         div[data-baseweb="popover"] p,
@@ -348,10 +384,14 @@ def apply_style():
             color: var(--text) !important;
         }}
 
-        /* Scrollbar area in popovers also stays white */
-        div[data-baseweb="popover"] [style*="background"],
-        div[data-baseweb="menu"] [style*="background"] {{
-            background: #ffffff !important;
+        /* Multiselect tags */
+        span[data-baseweb="tag"] {{
+            background: rgba(215,30,40,0.12) !important;
+            border: 1px solid rgba(215,30,40,0.25) !important;
+            color: var(--text) !important;
+        }}
+        span[data-baseweb="tag"] svg {{
+            fill: var(--text) !important;
         }}
 
         /* Links: consistent and readable */
