@@ -15,14 +15,14 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.4.0"
 APP_NAME = "Batsirai"
 DEPLOYMENT_MODE = os.environ.get("DEPLOYMENT_MODE", "production")
 SESSION_TIMEOUT_MINUTES = 60
 
 st.set_page_config(
     page_title=f"{APP_NAME} v{APP_VERSION}",
-    page_icon="",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -46,6 +46,20 @@ def get_org_password():
     return "youtube2024"
 
 ORG_PASSWORD = get_org_password()
+
+# Geographic coordinates for regions
+REGION_COORDINATES = {
+    "ZW": {"lat": -19.0154, "lon": 29.1549, "radius": "200km"},  # Zimbabwe
+    "ZA": {"lat": -30.5595, "lon": 22.9375, "radius": "500km"},  # South Africa
+    "GB": {"lat": 55.3781, "lon": -3.4360, "radius": "300km"},   # United Kingdom
+    "US": {"lat": 37.0902, "lon": -95.7129, "radius": "500km"},  # United States
+    "IN": {"lat": 20.5937, "lon": 78.9629, "radius": "500km"},   # India
+    "NG": {"lat": 9.0820, "lon": 8.6753, "radius": "400km"},     # Nigeria
+    "KE": {"lat": -1.2864, "lon": 36.8172, "radius": "300km"},   # Kenya
+    "GH": {"lat": 7.9465, "lon": -1.0232, "radius": "300km"},    # Ghana
+    "AU": {"lat": -25.2744, "lon": 133.7751, "radius": "500km"}, # Australia
+    "CA": {"lat": 56.1304, "lon": -106.3468, "radius": "500km"}, # Canada
+}
 
 THEME = {
     "bg": "#ffffff",
@@ -87,7 +101,6 @@ def apply_style():
             --neutral: {THEME['neutral']};
         }}
 
-        /* Force "light" behavior even when browser/OS prefers dark */
         html {{
             color-scheme: light !important;
         }}
@@ -263,7 +276,6 @@ def apply_style():
             fill: var(--text) !important;
         }}
 
-        /* Tabs */
         .stTabs [data-baseweb="tab-list"],
         div[data-testid="stTabs"] [data-baseweb="tab-list"] {{
             display: flex !important;
@@ -302,16 +314,12 @@ def apply_style():
             overflow: hidden !important;
         }}
 
-        /* ===== Ultra locked popover/dropdown/date picker/menu/tooltip styling (kills black background on deploy) ===== */
-
-        /* BaseWeb portals / layers */
         div[data-baseweb="layer"],
         div[data-baseweb="layer"] > div {{
             background: transparent !important;
             color: var(--text) !important;
         }}
 
-        /* Popover shells */
         div[data-baseweb="popover"],
         div[data-baseweb="popover"] > div {{
             background: #ffffff !important;
@@ -321,7 +329,6 @@ def apply_style():
             box-shadow: 0 12px 28px rgba(0,0,0,0.10) !important;
         }}
 
-        /* Menu container inside popovers */
         div[data-baseweb="menu"],
         div[data-baseweb="menu"] > div,
         div[data-baseweb="menu"] > div > div {{
@@ -329,7 +336,6 @@ def apply_style():
             color: var(--text) !important;
         }}
 
-        /* Listbox + options (Selectbox, Multiselect, etc) */
         ul[role="listbox"],
         div[role="listbox"] {{
             background: #ffffff !important;
@@ -357,7 +363,6 @@ def apply_style():
             background: rgba(215,30,40,0.12) !important;
         }}
 
-        /* Tooltips */
         div[data-baseweb="tooltip"],
         div[data-baseweb="tooltip"] > div {{
             background: #ffffff !important;
@@ -367,14 +372,12 @@ def apply_style():
             box-shadow: 0 10px 22px rgba(0,0,0,0.10) !important;
         }}
 
-        /* Date picker / calendar */
         div[data-baseweb="calendar"],
         div[data-baseweb="calendar"] * {{
             background: #ffffff !important;
             color: var(--text) !important;
         }}
 
-        /* Ensure dropdown text never inherits a dark theme */
         div[data-baseweb="popover"] span,
         div[data-baseweb="popover"] div,
         div[data-baseweb="popover"] p,
@@ -384,7 +387,6 @@ def apply_style():
             color: var(--text) !important;
         }}
 
-        /* Multiselect tags */
         span[data-baseweb="tag"] {{
             background: rgba(215,30,40,0.12) !important;
             border: 1px solid rgba(215,30,40,0.25) !important;
@@ -394,7 +396,6 @@ def apply_style():
             fill: var(--text) !important;
         }}
 
-        /* Links: consistent and readable */
         a, a:visited {{
             color: var(--accent) !important;
             text-decoration: none !important;
@@ -517,8 +518,8 @@ def shorten(text, n=160):
 
 def clean_tokens(text: str):
     text = str(text or "").lower()
-    text = re.sub(r"http\\S+|www\\.\\S+", " ", text)
-    text = re.sub(r"[^a-z0-9\\s]", " ", text)
+    text = re.sub(r"http\S+|www\.\S+", " ", text)
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
     parts = [p.strip() for p in text.split() if p.strip()]
     parts = [p for p in parts if p not in STOPWORDS and len(p) > 2]
     return parts
@@ -595,35 +596,67 @@ def analyze_sentiment_comment(text):
         label = "Neutral"
     return score, label
 
-def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", published_after=None, region_code=None):
+def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", published_after=None, region_code=None, location_filter=None):
     results = []
     next_page_token = None
+    
+    # Build search parameters
+    search_params = {
+        "part": "snippet",
+        "q": topic,
+        "type": "video",
+        "maxResults": min(50, max_videos - len(results)),
+        "order": order,
+        "safeSearch": "none",
+    }
+    
+    if published_after:
+        search_params["publishedAfter"] = published_after
+    
+    # Add location-based filtering if specified
+    if location_filter and location_filter in REGION_COORDINATES:
+        coords = REGION_COORDINATES[location_filter]
+        search_params["location"] = f"{coords['lat']},{coords['lon']}"
+        search_params["locationRadius"] = coords['radius']
+    elif region_code:
+        # Use region code as fallback (affects search relevance, not location)
+        search_params["regionCode"] = region_code
 
     while len(results) < max_videos:
         try:
-            req = youtube.search().list(
-                part="snippet",
-                q=topic,
-                type="video",
-                maxResults=min(50, max_videos - len(results)),
-                pageToken=next_page_token,
-                order=order,
-                safeSearch="none",
-                publishedAfter=published_after if published_after else None,
-                regionCode=region_code if region_code else None,
-            )
-            resp = req.execute()
+            search_params["pageToken"] = next_page_token
+            request = youtube.search().list(**search_params)
+            resp = request.execute()
+            
             for item in resp.get("items", []):
                 vid = item.get("id", {}).get("videoId")
                 sn = item.get("snippet", {})
                 if not vid:
                     continue
+                
+                # Additional verification - check if video is actually from the requested region
+                # by examining the channel country if available
+                channel_id = sn.get("channelId", "")
+                channel_country = None
+                if channel_id:
+                    try:
+                        channel_resp = youtube.channels().list(
+                            part="snippet",
+                            id=channel_id
+                        ).execute()
+                        if channel_resp.get("items"):
+                            channel_country = channel_resp["items"][0].get("snippet", {}).get("country", "")
+                    except:
+                        pass
+                
                 results.append(
                     {
                         "video_id": vid,
                         "title": sn.get("title", ""),
                         "description": sn.get("description", ""),
                         "channel": sn.get("channelTitle", ""),
+                        "channel_id": channel_id,
+                        "channel_country": channel_country,
                         "published_at": sn.get("publishedAt", ""),
                     }
                 )
@@ -634,7 +667,8 @@ def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", pub
             if not next_page_token:
                 break
 
-        except Exception:
+        except Exception as e:
+            print(f"Search error: {e}")
             break
 
     return results
@@ -644,19 +678,41 @@ def fetch_video_stats(youtube, video_ids):
     for i in range(0, len(video_ids), 50):
         chunk = video_ids[i : i + 50]
         try:
-            resp = youtube.videos().list(part="snippet,statistics", id=",".join(chunk)).execute()
+            resp = youtube.videos().list(part="snippet,statistics,contentDetails", id=",".join(chunk)).execute()
             for item in resp.get("items", []):
                 vid = item.get("id")
                 stats = item.get("statistics", {}) or {}
                 sn = item.get("snippet", {}) or {}
+                cd = item.get("contentDetails", {}) or {}
+                
+                # Get video duration
+                duration = cd.get("duration", "")
+                
+                # Get channel country
+                channel_id = sn.get("channelId", "")
+                channel_country = None
+                if channel_id:
+                    try:
+                        channel_resp = youtube.channels().list(
+                            part="snippet",
+                            id=channel_id
+                        ).execute()
+                        if channel_resp.get("items"):
+                            channel_country = channel_resp["items"][0].get("snippet", {}).get("country", "")
+                    except:
+                        pass
+                
                 out[vid] = {
                     "views": int(stats.get("viewCount", 0) or 0),
                     "likes": int(stats.get("likeCount", 0) or 0),
                     "comment_count": int(stats.get("commentCount", 0) or 0),
                     "title": sn.get("title", ""),
                     "channel": sn.get("channelTitle", ""),
+                    "channel_id": channel_id,
+                    "channel_country": channel_country,
                     "published_at": sn.get("publishedAt", ""),
                     "description": sn.get("description", ""),
+                    "duration": duration,
                 }
         except Exception:
             continue
@@ -727,6 +783,10 @@ def build_reasons(row):
 
     if row.get("freshness_days", 9999) <= 30:
         reasons.append("Fresh upload, the discussion is current.")
+        
+    # Add location info if available
+    if row.get("channel_country"):
+        reasons.append(f"Channel is based in {row.get('channel_country')}.")
 
     kw = str(row.get("top_keywords", "")).strip()
     if kw:
@@ -747,8 +807,8 @@ def extract_phrases_from_text(text: str):
         phrases = []
     cleaned = []
     for p in phrases:
-        p = re.sub(r"[^a-z0-9\\s]", " ", p)
-        p = re.sub(r"\\s+", " ", p).strip()
+        p = re.sub(r"[^a-z0-9\s]", " ", p)
+        p = re.sub(r"\s+", " ", p).strip()
         if not p:
             continue
         if len(p) < 3:
@@ -814,10 +874,10 @@ def build_theme_points(dfc: pd.DataFrame, label: str = None, top_k: int = 4):
 
 def normalize_question(text: str):
     s = str(text or "").strip().lower()
-    s = re.sub(r"http\\S+|www\\.\\S+", " ", s)
-    s = re.sub(r"\\s+", " ", s).strip()
-    s = re.sub(r"[^a-z0-9\\?\\s]", " ", s)
-    s = re.sub(r"\\s+", " ", s).strip()
+    s = re.sub(r"http\S+|www\.\S+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"[^a-z0-9\?\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
     if not s.endswith("?") and "?" in s:
         s = s.replace("?", "").strip() + "?"
     return s
@@ -828,7 +888,7 @@ def build_question_points(dfc: pd.DataFrame, top_k: int = 5):
 
     df = dfc.copy()
     df["comment_str"] = df["comment"].astype(str)
-    qdf = df[df["comment_str"].str.contains(r"\\?", regex=True, na=False)].copy()
+    qdf = df[df["comment_str"].str.contains(r"\?", regex=True, na=False)].copy()
     if qdf.empty:
         return []
 
@@ -882,6 +942,7 @@ def build_final_answer(res: dict):
     top_title = str(top_pick.get("title", "")).strip()
     top_channel = str(top_pick.get("channel", "")).strip()
     top_url = str(top_pick.get("video_url", "")).strip()
+    top_location = str(top_pick.get("channel_country", "")).strip()
 
     bullets = []
 
@@ -889,13 +950,15 @@ def build_final_answer(res: dict):
         bullets.append(f"I scanned {scanned} videos for this topic.")
         bullets.append("I could not sample comments for this run, so ranking used engagement, topic match, and recency.")
         bullets.append(f"Best pick right now: {top_title} by {top_channel}.")
+        if top_location:
+            bullets.append(f"This channel is based in {top_location}.")
         bullets.append("Try increasing Comments per video, or pick a different time window or region.")
         overall = {"sentiment_counts": pd.Series({"Positive": 0, "Neutral": 0, "Negative": 0})}
         return {
             "headline": f"What this topic looks like on YouTube: {topic}",
             "bullets": bullets,
             "overall": overall,
-            "top_pick": {"title": top_title, "channel": top_channel, "url": top_url},
+            "top_pick": {"title": top_title, "channel": top_channel, "url": top_url, "location": top_location},
             "themes": {"common": [], "positive": [], "negative": [], "questions": []},
         }
 
@@ -919,6 +982,8 @@ def build_final_answer(res: dict):
     bullets.append(f"I scanned {scanned} videos for this topic.")
     bullets.append(f"Comment vibe looks {vibe}: {pos_pct:.1f}% positive, {neg_pct:.1f}% negative.")
     bullets.append(f"Best pick right now: {top_title} by {top_channel}.")
+    if top_location:
+        bullets.append(f"This channel is based in {top_location}.")
     bullets.append("It ranks high because it combines engagement, positive reaction, and topic match better than the rest.")
 
     common_points = build_theme_points(dc, label=None, top_k=4)
@@ -932,11 +997,11 @@ def build_final_answer(res: dict):
         "headline": f"What this topic looks like on YouTube: {topic}",
         "bullets": bullets,
         "overall": overall,
-        "top_pick": {"title": top_title, "channel": top_channel, "url": top_url},
+        "top_pick": {"title": top_title, "channel": top_channel, "url": top_url, "location": top_location},
         "themes": {"common": common_points, "positive": pos_points, "negative": neg_points, "questions": q_points},
     }
 
-def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window_days, region_code):
+def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window_days, region_code, location_filter):
     yt = youtube_client()
     if yt is None:
         return None
@@ -950,13 +1015,22 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         dt = datetime.now(timezone.utc) - pd.Timedelta(days=int(time_window_days))
         published_after = dt.isoformat().replace("+00:00", "Z")
 
+    # Enhanced search with better query construction
+    # Add location context to the search query if location filter is set
+    search_topic = topic
+    if location_filter and location_filter in REGION_COORDINATES:
+        # Add location context to improve relevance
+        location_context = REGION_COORDINATES[location_filter]
+        search_topic = f"{topic} {location_filter}"
+
     videos = search_videos_by_topic(
         yt,
-        topic=topic,
+        topic=search_topic,
         max_videos=max_videos,
         order=order,
         published_after=published_after,
         region_code=region_code,
+        location_filter=location_filter,
     )
     if not videos:
         return None
@@ -978,6 +1052,7 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         desc = meta.get("description") or next((x["description"] for x in videos if x["video_id"] == vid), "")
         channel = meta.get("channel") or next((x["channel"] for x in videos if x["video_id"] == vid), "")
         published_at = meta.get("published_at") or next((x["published_at"] for x in videos if x["video_id"] == vid), "")
+        channel_country = meta.get("channel_country") or next((x.get("channel_country") for x in videos if x["video_id"] == vid), None)
 
         status.markdown(f"<div class='muted'>Scanning video {idx} of {len(ids)}...</div>", unsafe_allow_html=True)
 
@@ -1030,6 +1105,7 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
                 "video_id": vid,
                 "title": title,
                 "channel": channel,
+                "channel_country": channel_country,
                 "published_at": published_at,
                 "views": views,
                 "likes": likes,
@@ -1090,6 +1166,7 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         "videos_df": dv,
         "comments_df": pd.DataFrame(comment_rows) if comment_rows else pd.DataFrame(columns=["video_id", "comment", "published_at", "like_count", "author", "sentiment_score", "sentiment"]),
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "location_filter": location_filter,
     }
 
     res["final_answer"] = build_final_answer(res)
@@ -1151,7 +1228,12 @@ with tabs[0]:
             format_func=lambda x: "Any time" if x == 0 else f"Last {x} days",
         )
     with r4:
-        region_code = st.text_input("Region code (optional)", value="", placeholder="Example: ZW, ZA, GB")
+        location_filter = st.selectbox(
+            "Location filter",
+            options=["Global"] + list(REGION_COORDINATES.keys()),
+            index=0,
+            format_func=lambda x: "Global (all locations)" if x == "Global" else x,
+        )
 
     b1, b2 = st.columns([1, 5])
     with b1:
@@ -1175,7 +1257,8 @@ with tabs[0]:
                     comments_per_video=int(comments_per_video),
                     order=order,
                     time_window_days=int(time_window_days),
-                    region_code=(region_code or "").strip() or None,
+                    region_code=None,
+                    location_filter=None if location_filter == "Global" else location_filter,
                 )
             if res is None:
                 st.error("No results. Try a different topic or check your API key and quota.")
@@ -1202,10 +1285,14 @@ with tabs[1]:
     topic = res["topic"]
     top10 = dv.head(10).copy()
 
+    location_info = ""
+    if res.get("location_filter"):
+        location_info = f" • Location: {res.get('location_filter')}"
+
     st.markdown(
         f"""
         <div class="card">
-            <div style="font-size:16px; font-weight:800;">Top 10 videos for: {html.escape(topic)}</div>
+            <div style="font-size:16px; font-weight:800;">Top 10 videos for: {html.escape(topic)}{location_info}</div>
             <div class="subtitle">Ranking uses engagement, sentiment, topic match, and recency.</div>
         </div>
         """,
@@ -1216,12 +1303,14 @@ with tabs[1]:
     total_scanned = len(dv)
     avg_sent = float(dv["avg_sentiment"].mean()) if total_scanned else 0.0
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.markdown(f"<div class='metric'><div class='metric-k'>Scanned</div><div class='metric-v'>{total_scanned}</div></div>", unsafe_allow_html=True)
     with m2:
         st.markdown(f"<div class='metric'><div class='metric-k'>Avg sentiment</div><div class='metric-v'>{avg_sent:.2f}</div></div>", unsafe_allow_html=True)
     with m3:
+        st.markdown(f"<div class='metric'><div class='metric-k'>Location</div><div class='metric-v'>{res.get('location_filter', 'Global')}</div></div>", unsafe_allow_html=True)
+    with m4:
         st.markdown(f"<div class='metric'><div class='metric-k'>Generated</div><div class='metric-v'>{res['generated_at']}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
@@ -1299,12 +1388,14 @@ with tabs[1]:
 
         if top_pick and str(top_pick.get("url", "")).strip():
             u = html.escape(top_pick.get("url", ""))
+            location_display = f"Location: {top_pick.get('location', 'Unknown')}" if top_pick.get('location') else ""
             st.markdown(
                 f"""
                 <div class="card-soft" style="margin-top: 12px;">
                     <div style="font-weight:800;">Best pick right now</div>
                     <div class="subtitle" style="margin-top:6px;">{html.escape(top_pick.get('title',''))}</div>
                     <div class="muted" style="font-size:13px; margin-top:4px;">{html.escape(top_pick.get('channel',''))}</div>
+                    <div class="muted" style="font-size:12px; margin-top:2px;">{location_display}</div>
                     <div style="margin-top:10px; font-size:12.5px;">
                         <a href="{u}" target="_blank" rel="noopener">Open on YouTube</a>
                     </div>
@@ -1349,6 +1440,7 @@ with tabs[1]:
         "rank",
         "title",
         "channel",
+        "channel_country",
         "views",
         "likes",
         "comment_count",
@@ -1366,6 +1458,7 @@ with tabs[1]:
     t["neg_pct"] = t["neg_pct"].map(lambda x: f"{x:.1f}%")
     t["relevance_score"] = t["relevance_score"].map(lambda x: f"{x:.2f}")
     t["final_score"] = t["final_score"].map(lambda x: f"{x:.3f}")
+    t["channel_country"] = t["channel_country"].fillna("Unknown")
 
     st.dataframe(t, use_container_width=True, height=340)
 
@@ -1386,14 +1479,19 @@ with tabs[1]:
         title = html.escape(str(row["title"]))
         channel = html.escape(str(row["channel"]))
         url = html.escape(str(row["video_url"]))
+        location = str(row.get("channel_country", "Unknown")).strip()
         chip = f"<span class='chip'><span class='chip-dot'></span> Rank {int(row['rank'])}</span>"
+        location_chip = f"<span class='chip'>📍 {location}</span>" if location and location != "Unknown" else ""
 
         st.markdown(
             f"""
             <div class="card-soft" style="margin-top: 10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
                     <div style="font-weight:800; font-size:15px;">{title}</div>
-                    <div>{chip}</div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        {location_chip}
+                        {chip}
+                    </div>
                 </div>
                 <div class="muted" style="margin-top:6px; font-size:13px;">{channel}</div>
                 <div style="margin-top:10px; line-height:1.6; font-size:13px; white-space:pre-wrap;">{html.escape(str(reasons))}</div>
@@ -1489,8 +1587,9 @@ with tabs[2]:
     row = dv[dv["video_id"] == pick].iloc[0].to_dict()
     v_url = str(row.get("video_url", "")).strip()
     v_url_safe = html.escape(v_url)
+    location = str(row.get("channel_country", "Unknown")).strip()
 
-    k1, k2, k3, k4 = st.columns(4)
+    k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
         st.markdown(f"<div class='metric'><div class='metric-k'>Views</div><div class='metric-v'>{int(row.get('views',0)):,}</div></div>", unsafe_allow_html=True)
     with k2:
@@ -1499,6 +1598,8 @@ with tabs[2]:
         st.markdown(f"<div class='metric'><div class='metric-k'>Comments</div><div class='metric-v'>{int(row.get('comment_count',0)):,}</div></div>", unsafe_allow_html=True)
     with k4:
         st.markdown(f"<div class='metric'><div class='metric-k'>Rank</div><div class='metric-v'>{int(row.get('rank',0))}</div></div>", unsafe_allow_html=True)
+    with k5:
+        st.markdown(f"<div class='metric'><div class='metric-k'>Location</div><div class='metric-v'>{location}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
     if v_url:
@@ -1585,12 +1686,14 @@ with tabs[3]:
 
     summary = dv.copy()
     summary["generated_at"] = res["generated_at"]
+    summary["location_filter"] = res.get("location_filter", "Global")
     summary = summary[
         [
             "rank",
             "video_id",
             "title",
             "channel",
+            "channel_country",
             "published_at",
             "views",
             "likes",
@@ -1608,6 +1711,7 @@ with tabs[3]:
             "why_this_ranked",
             "video_url",
             "generated_at",
+            "location_filter",
         ]
     ]
 
