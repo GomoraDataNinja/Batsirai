@@ -18,7 +18,7 @@ from functools import lru_cache
 
 warnings.filterwarnings("ignore")
 
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.7.0"
 APP_NAME = "Batsirai"
 DEPLOYMENT_MODE = os.environ.get("DEPLOYMENT_MODE", "production")
 SESSION_TIMEOUT_MINUTES = 60
@@ -52,16 +52,18 @@ ORG_PASSWORD = get_org_password()
 
 # Geographic coordinates for regions
 REGION_COORDINATES = {
-    "ZW": {"lat": -19.0154, "lon": 29.1549, "radius": "200km", "name": "Zimbabwe"},
-    "ZA": {"lat": -30.5595, "lon": 22.9375, "radius": "500km", "name": "South Africa"},
-    "GB": {"lat": 55.3781, "lon": -3.4360, "radius": "300km", "name": "United Kingdom"},
-    "US": {"lat": 37.0902, "lon": -95.7129, "radius": "500km", "name": "United States"},
-    "IN": {"lat": 20.5937, "lon": 78.9629, "radius": "500km", "name": "India"},
-    "NG": {"lat": 9.0820, "lon": 8.6753, "radius": "400km", "name": "Nigeria"},
-    "KE": {"lat": -1.2864, "lon": 36.8172, "radius": "300km", "name": "Kenya"},
-    "GH": {"lat": 7.9465, "lon": -1.0232, "radius": "300km", "name": "Ghana"},
-    "AU": {"lat": -25.2744, "lon": 133.7751, "radius": "500km", "name": "Australia"},
-    "CA": {"lat": 56.1304, "lon": -106.3468, "radius": "500km", "name": "Canada"},
+    "ZW": {"lat": -19.0154, "lon": 29.1549, "radius": "250km", "name": "Zimbabwe", "code": "ZW"},
+    "ZA": {"lat": -30.5595, "lon": 22.9375, "radius": "500km", "name": "South Africa", "code": "ZA"},
+    "GB": {"lat": 55.3781, "lon": -3.4360, "radius": "300km", "name": "United Kingdom", "code": "GB"},
+    "US": {"lat": 37.0902, "lon": -95.7129, "radius": "500km", "name": "United States", "code": "US"},
+    "IN": {"lat": 20.5937, "lon": 78.9629, "radius": "500km", "name": "India", "code": "IN"},
+    "NG": {"lat": 9.0820, "lon": 8.6753, "radius": "400km", "name": "Nigeria", "code": "NG"},
+    "KE": {"lat": -1.2864, "lon": 36.8172, "radius": "300km", "name": "Kenya", "code": "KE"},
+    "GH": {"lat": 7.9465, "lon": -1.0232, "radius": "300km", "name": "Ghana", "code": "GH"},
+    "AU": {"lat": -25.2744, "lon": 133.7751, "radius": "500km", "name": "Australia", "code": "AU"},
+    "CA": {"lat": 56.1304, "lon": -106.3468, "radius": "500km", "name": "Canada", "code": "CA"},
+    "FR": {"lat": 46.2276, "lon": 2.2137, "radius": "500km", "name": "France", "code": "FR"},
+    "DE": {"lat": 51.1657, "lon": 10.4515, "radius": "500km", "name": "Germany", "code": "DE"},
 }
 
 THEME = {
@@ -508,21 +510,7 @@ def youtube_client():
         return None
 
     try:
-        # Test the API key with a minimal request
-        test_client = build("youtube", "v3", developerKey=str(api_key).strip())
-        # Make a minimal test call
-        test_client.search().list(
-            part="snippet",
-            q="test",
-            maxResults=1
-        ).execute()
         return build("youtube", "v3", developerKey=str(api_key).strip())
-    except HttpError as e:
-        if e.resp.status == 403:
-            st.session_state.api_error = "API key quota exceeded or key invalid. Please check your YouTube API quota."
-        else:
-            st.session_state.api_error = f"YouTube API error: {str(e)}"
-        return None
     except Exception as e:
         st.session_state.api_error = f"Failed to initialize YouTube client: {str(e)}"
         return None
@@ -610,7 +598,6 @@ def get_video_comments(youtube, video_id, max_comments=150):
 
         except HttpError as e:
             if e.resp.status == 403:
-                # Quota exceeded - stop gracefully
                 break
             elif "commentsDisabled" in str(e):
                 break
@@ -633,38 +620,58 @@ def analyze_sentiment_comment(text):
     return score, label
 
 def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", published_after=None, region_code=None, location_filter=None):
+    """
+    Enhanced search that mimics YouTube's search behavior
+    """
     results = []
     next_page_token = None
     attempts = 0
     max_attempts = 2
     
-    # Build search parameters
+    # Clean and enhance the search query
+    search_query = topic.strip()
+    
+    # Add location context if specified
+    if location_filter and location_filter in REGION_COORDINATES:
+        location_name = REGION_COORDINATES[location_filter]["name"]
+        # Add location to query for better relevance
+        search_query = f"{topic} {location_name}"
+    
+    # Build search parameters - similar to YouTube's search
     search_params = {
         "part": "snippet",
-        "q": topic,
+        "q": search_query,
         "type": "video",
-        "maxResults": min(50, max_videos - len(results)),
+        "maxResults": min(50, max_videos),
         "order": order,
         "safeSearch": "none",
+        "videoDuration": "any",  # Include all durations
+        "videoType": "any",      # Include all video types
     }
     
     if published_after:
         search_params["publishedAfter"] = published_after
     
-    # Add location-based filtering if specified
+    # Location-based filtering
     if location_filter and location_filter in REGION_COORDINATES:
         coords = REGION_COORDINATES[location_filter]
         search_params["location"] = f"{coords['lat']},{coords['lon']}"
         search_params["locationRadius"] = coords['radius']
+        search_params["regionCode"] = location_filter
     elif region_code:
         search_params["regionCode"] = region_code
 
     while len(results) < max_videos and attempts < max_attempts:
         try:
-            search_params["pageToken"] = next_page_token
+            if next_page_token:
+                search_params["pageToken"] = next_page_token
+            
             request = youtube.search().list(**search_params)
             resp = request.execute()
             st.session_state.api_call_count += 1
+            
+            # Track what search returned
+            st.session_state.last_search_results = len(resp.get("items", []))
             
             for item in resp.get("items", []):
                 vid = item.get("id", {}).get("videoId")
@@ -672,16 +679,16 @@ def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", pub
                 if not vid:
                     continue
                 
-                results.append(
-                    {
-                        "video_id": vid,
-                        "title": sn.get("title", ""),
-                        "description": sn.get("description", ""),
-                        "channel": sn.get("channelTitle", ""),
-                        "channel_id": sn.get("channelId", ""),
-                        "published_at": sn.get("publishedAt", ""),
-                    }
-                )
+                results.append({
+                    "video_id": vid,
+                    "title": sn.get("title", ""),
+                    "description": sn.get("description", ""),
+                    "channel": sn.get("channelTitle", ""),
+                    "channel_id": sn.get("channelId", ""),
+                    "published_at": sn.get("publishedAt", ""),
+                    "thumbnails": sn.get("thumbnails", {}),
+                })
+                
                 if len(results) >= max_videos:
                     break
 
@@ -691,12 +698,11 @@ def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", pub
 
         except HttpError as e:
             if e.resp.status == 403:
-                # Quota exceeded
-                st.session_state.api_error = "YouTube API quota exceeded. Please try again later or use fewer videos/comments."
+                st.session_state.api_error = "YouTube API quota exceeded. Please try again later."
                 break
             attempts += 1
             time.sleep(1)
-        except Exception:
+        except Exception as e:
             attempts += 1
             time.sleep(1)
 
@@ -1042,7 +1048,6 @@ def build_final_answer(res: dict):
     }
 
 def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window_days, region_code, location_filter):
-    # Reset API error
     st.session_state.api_error = None
     
     yt = youtube_client()
@@ -1058,19 +1063,22 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         dt = datetime.now(timezone.utc) - pd.Timedelta(days=int(time_window_days))
         published_after = dt.isoformat().replace("+00:00", "Z")
 
-    # Enhanced search with better query construction
+    # Clean and enhance the search query
     search_topic = topic
+    
+    # Add location context if filtering by location
     if location_filter and location_filter in REGION_COORDINATES:
         location_name = REGION_COORDINATES[location_filter]["name"]
         search_topic = f"{topic} {location_name}"
 
+    # Search YouTube like YouTube does
     videos = search_videos_by_topic(
         yt,
         topic=search_topic,
         max_videos=max_videos,
         order=order,
         published_after=published_after,
-        region_code=region_code,
+        region_code=region_code if not location_filter else location_filter,
         location_filter=location_filter,
     )
     
@@ -1078,7 +1086,7 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         if st.session_state.api_error:
             st.error(st.session_state.api_error)
         else:
-            st.error("No videos found. Try a different topic or check your search parameters.")
+            st.error(f"No videos found for '{topic}'. Try a different topic or adjust your filters.")
         return None
 
     ids = [v["video_id"] for v in videos]
@@ -1102,7 +1110,6 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
 
         status.markdown(f"<div class='muted'>Scanning video {idx} of {len(ids)}...</div>", unsafe_allow_html=True)
 
-        # Only fetch comments if we have quota and it makes sense
         comments = []
         if comments_per_video > 0 and not st.session_state.api_error:
             comments = get_video_comments(yt, vid, max_comments=comments_per_video)
@@ -1217,6 +1224,7 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "location_filter": location_filter,
         "api_calls": st.session_state.api_call_count,
+        "search_query": search_topic,
     }
 
     res["final_answer"] = build_final_answer(res)
@@ -1227,7 +1235,7 @@ st.markdown(
     f"""
     <div class="hero" style="text-align:center;">
         <div class="title">{APP_NAME}</div>
-        <div class="subtitle">Welcome to Batsirai. Search a topic and I will find videos, read comments, then rank the best picks.</div>
+        <div class="subtitle">Search any topic and get YouTube results with sentiment analysis - just like YouTube but smarter.</div>
         <div style="height: 12px;"></div>
         <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap;">
             <div class="chip"><span class="chip-dot"></span> Secure session</div>
@@ -1240,63 +1248,77 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Show API status if there's an error
 if st.session_state.api_error:
     st.warning(f"⚠️ {st.session_state.api_error}")
 
 st.markdown("")
 
-tabs = st.tabs(["Search", "Top 10", "Explore", "Export"])
+tabs = st.tabs(["🔍 Search", "📊 Top 10", "🔬 Explore", "📥 Export"])
 
 with tabs[0]:
     st.markdown(
         """
         <div class="card">
-            <div style="font-size:16px; font-weight:800;">Topic search</div>
-            <div class="subtitle">Type what you want to know. I search YouTube and run the analysis.</div>
+            <div style="font-size:16px; font-weight:800;">🔍 Search YouTube</div>
+            <div class="subtitle">Type any question or topic - just like you would on YouTube.</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
     st.markdown("")
 
+    # Search input - similar to YouTube
     c1, c2 = st.columns([3, 1])
     with c1:
         topic = st.text_input(
-            "Topic",
+            "What do you want to find?",
             value=st.session_state.topic_query,
-            placeholder="Example: best excel tutor, study tips, how to budget",
+            placeholder="Example: best excel tutor, how to budget money, study tips for exams",
+            help="Type your question or topic like you would on YouTube"
         )
     with c2:
-        order = st.selectbox("Sort results by", options=["relevance", "date", "viewCount", "rating"], index=0)
-
-    r1, r2, r3, r4 = st.columns([1.1, 1.1, 1.1, 1.2])
-    with r1:
-        max_videos = st.slider("Videos to scan", 5, 50, 20, step=5, 
-                              help="Lower this if you're hitting quota limits")
-    with r2:
-        comments_per_video = st.slider("Comments per video", 20, 150, 80, step=10,
-                                      help="Lower this to save quota")
-    with r3:
-        time_window_days = st.selectbox(
-            "Time window",
-            options=[0, 7, 30, 90, 365],
-            index=2,
-            format_func=lambda x: "Any time" if x == 0 else f"Last {x} days",
-        )
-    with r4:
-        location_filter = st.selectbox(
-            "Location filter",
-            options=["Global"] + list(REGION_COORDINATES.keys()),
+        order = st.selectbox(
+            "Sort by", 
+            options=["relevance", "date", "viewCount", "rating"],
             index=0,
-            format_func=lambda x: "Global (all locations)" if x == "Global" else REGION_COORDINATES[x]["name"],
+            format_func=lambda x: {
+                "relevance": "📊 Relevance",
+                "date": "📅 Latest",
+                "viewCount": "👁️ Most viewed",
+                "rating": "⭐ Top rated"
+            }.get(x, x)
         )
 
-    b1, b2 = st.columns([1, 5])
-    with b1:
-        run = st.button("Search and analyze", use_container_width=True)
-    with b2:
-        if st.button("Clear results", use_container_width=True):
+    # Advanced filters
+    with st.expander("⚙️ Advanced filters", expanded=False):
+        r1, r2, r3, r4 = st.columns([1, 1, 1, 1.2])
+        with r1:
+            max_videos = st.slider("Videos to scan", 5, 50, 20, step=5, 
+                                  help="Lower this if you're hitting quota limits")
+        with r2:
+            comments_per_video = st.slider("Comments per video", 20, 150, 80, step=10,
+                                          help="Lower this to save quota")
+        with r3:
+            time_window_days = st.selectbox(
+                "Upload date",
+                options=[0, 7, 30, 90, 365],
+                index=2,
+                format_func=lambda x: "Any time" if x == 0 else f"Last {x} days",
+            )
+        with r4:
+            location_filter = st.selectbox(
+                "📍 Location",
+                options=["Global"] + list(REGION_COORDINATES.keys()),
+                index=0,
+                format_func=lambda x: "🌍 Anywhere" if x == "Global" else f"📍 {REGION_COORDINATES[x]['name']}",
+            )
+
+    # Search button
+    search_col1, search_col2, search_col3 = st.columns([2, 1, 2])
+    with search_col1:
+        run = st.button("🔍 Search YouTube", use_container_width=True, type="primary")
+    with search_col3:
+        if st.button("🗑️ Clear results", use_container_width=True):
             st.session_state.topic_results = None
             st.session_state.topic_query = ""
             st.session_state.api_error = None
@@ -1305,29 +1327,34 @@ with tabs[0]:
     if run:
         topic_clean = (topic or "").strip()
         if not topic_clean:
-            st.error("Type a topic first.")
+            st.error("Please type a topic or question to search.")
         else:
             st.session_state.topic_query = topic_clean
             st.session_state.api_call_count = 0
             st.session_state.api_error = None
             
-            with st.spinner("Searching and analyzing videos..."):
+            location_display = "Anywhere" if location_filter == "Global" else REGION_COORDINATES[location_filter]["name"]
+            
+            # Show what we're searching for
+            st.info(f"🔍 Searching YouTube for: **{topic_clean}** in **{location_display}**")
+            
+            with st.spinner(f"Searching YouTube and analyzing results..."):
                 res = run_topic_analysis(
                     topic=topic_clean,
                     max_videos=int(max_videos),
                     comments_per_video=int(comments_per_video),
                     order=order,
                     time_window_days=int(time_window_days),
-                    region_code=None,
+                    region_code=None if location_filter == "Global" else location_filter,
                     location_filter=None if location_filter == "Global" else location_filter,
                 )
             
             if res is None:
                 if not st.session_state.api_error:
-                    st.error("No results. Try a different topic or adjust your search parameters.")
+                    st.error(f"No results found for '{topic_clean}'. Try a different topic or adjust your search.")
             else:
                 st.session_state.topic_results = res
-                st.success(f"Done! Found {len(res['videos_df'])} videos. Check Top 10.")
+                st.success(f"✅ Found {len(res['videos_df'])} videos! Check the Top 10 tab for results.")
                 safe_rerun()
 
 with tabs[1]:
@@ -1337,7 +1364,7 @@ with tabs[1]:
             """
             <div class="card-soft">
                 <div style="font-size:16px; font-weight:800;">No results yet</div>
-                <div class="subtitle">Use the Search tab to analyze a topic.</div>
+                <div class="subtitle">Use the Search tab to find videos on YouTube.</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1351,13 +1378,13 @@ with tabs[1]:
     location_info = ""
     if res.get("location_filter"):
         location_name = REGION_COORDINATES.get(res.get("location_filter"), {}).get("name", res.get("location_filter"))
-        location_info = f" • Location: {location_name}"
+        location_info = f" 📍 {location_name}"
 
     st.markdown(
         f"""
         <div class="card">
-            <div style="font-size:16px; font-weight:800;">Top 10 videos for: {html.escape(topic)}{location_info}</div>
-            <div class="subtitle">Ranking uses engagement, sentiment, topic match, and recency.</div>
+            <div style="font-size:16px; font-weight:800;">📊 Top 10 results for: {html.escape(topic)}{location_info}</div>
+            <div class="subtitle">Ranked by engagement, sentiment, topic match, and recency.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1369,14 +1396,14 @@ with tabs[1]:
 
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Scanned</div><div class='metric-v'>{total_scanned}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>📹 Videos</div><div class='metric-v'>{total_scanned}</div></div>", unsafe_allow_html=True)
     with m2:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Avg sentiment</div><div class='metric-v'>{avg_sent:.2f}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>💬 Avg sentiment</div><div class='metric-v'>{avg_sent:.2f}</div></div>", unsafe_allow_html=True)
     with m3:
-        location_display = REGION_COORDINATES.get(res.get("location_filter"), {}).get("name", "Global") if res.get("location_filter") else "Global"
-        st.markdown(f"<div class='metric'><div class='metric-k'>Location</div><div class='metric-v'>{location_display}</div></div>", unsafe_allow_html=True)
+        location_display = REGION_COORDINATES.get(res.get("location_filter"), {}).get("name", "🌍 Global") if res.get("location_filter") else "🌍 Global"
+        st.markdown(f"<div class='metric'><div class='metric-k'>📍 Location</div><div class='metric-v'>{location_display}</div></div>", unsafe_allow_html=True)
     with m4:
-        st.markdown(f"<div class='metric'><div class='metric-k'>API Calls</div><div class='metric-v'>{res.get('api_calls', 0)}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>🔑 API Calls</div><div class='metric-v'>{res.get('api_calls', 0)}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
 
@@ -1390,7 +1417,7 @@ with tabs[1]:
     st.markdown(
         f"""
         <div class="card">
-            <div style="font-size:16px; font-weight:800;">Bot answer</div>
+            <div style="font-size:16px; font-weight:800;">🤖 What I found</div>
             <div class="subtitle">{html.escape(headline)}</div>
         </div>
         """,
@@ -1412,8 +1439,8 @@ with tabs[1]:
         st.markdown(
             """
             <div class="card">
-                <div style="font-size:16px; font-weight:800;">What people are actually saying</div>
-                <div class="subtitle">Each point includes an example comment.</div>
+                <div style="font-size:16px; font-weight:800;">💬 What people are saying</div>
+                <div class="subtitle">Key themes from the comment sections.</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1439,17 +1466,17 @@ with tabs[1]:
                     f"""
                     <div class="card-soft" style="margin-top: 10px;">
                         <div style="font-weight:800; font-size:13px;">- {sentence}</div>
-                        <div class="muted" style="margin-top:6px; font-size:12px;">Shows up in about {pct:.1f}% of sampled comments.</div>
-                        <div style="margin-top:8px; font-size:12.5px; line-height:1.55;">Example: "{ex}"</div>
+                        <div class="muted" style="margin-top:6px; font-size:12px;">Mentioned in {pct:.1f}% of comments.</div>
+                        <div style="margin-top:8px; font-size:12.5px; line-height:1.55;">💬 "{ex}"</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
 
-        render_points("People keep mentioning", themes.get("common", []))
-        render_points("People like", themes.get("positive", []))
-        render_points("People complain about", themes.get("negative", []))
-        render_points("People keep asking", themes.get("questions", []))
+        render_points("📌 Common topics", themes.get("common", []))
+        render_points("👍 Positive feedback", themes.get("positive", []))
+        render_points("👎 Negative feedback", themes.get("negative", []))
+        render_points("❓ Questions people ask", themes.get("questions", []))
 
         if top_pick and str(top_pick.get("url", "")).strip():
             u = html.escape(top_pick.get("url", ""))
@@ -1457,12 +1484,12 @@ with tabs[1]:
             st.markdown(
                 f"""
                 <div class="card-soft" style="margin-top: 12px;">
-                    <div style="font-weight:800;">Best pick right now</div>
+                    <div style="font-weight:800;">🏆 Best pick</div>
                     <div class="subtitle" style="margin-top:6px;">{html.escape(top_pick.get('title',''))}</div>
                     <div class="muted" style="font-size:13px; margin-top:4px;">{html.escape(top_pick.get('channel',''))}</div>
                     <div class="muted" style="font-size:12px; margin-top:2px;">{location_display}</div>
                     <div style="margin-top:10px; font-size:12.5px;">
-                        <a href="{u}" target="_blank" rel="noopener">Open on YouTube</a>
+                        <a href="{u}" target="_blank" rel="noopener">▶️ Watch on YouTube</a>
                     </div>
                 </div>
                 """,
@@ -1476,14 +1503,14 @@ with tabs[1]:
                 dom = sc.idxmax()
                 dom_pct = (float(sc.max()) / max(1.0, float(sc.sum()))) * 100.0
                 center = f"{dom}<br>{dom_pct:.0f}%"
-                fig = donut_chart(sc, "Overall comment sentiment", center)
+                fig = donut_chart(sc, "💬 Comment sentiment", center)
                 st.plotly_chart(fig, use_container_width=True, key="top10_overall_donut")
             else:
                 st.markdown(
                     """
                     <div class="card-soft">
-                        <div style="font-weight:800;">Sentiment chart</div>
-                        <div class="subtitle">No sampled comments to plot for this run.</div>
+                        <div style="font-weight:800;">💬 Sentiment chart</div>
+                        <div class="subtitle">No comments sampled for this run.</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -1493,8 +1520,8 @@ with tabs[1]:
     st.markdown(
         """
         <div class="card">
-            <div style="font-size:16px; font-weight:800;">Top 10 table</div>
-            <div class="subtitle">Export from the Export tab if you want files.</div>
+            <div style="font-size:16px; font-weight:800;">📋 Top 10 results</div>
+            <div class="subtitle">Full list of the best videos for your search.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1531,7 +1558,7 @@ with tabs[1]:
     st.markdown(
         """
         <div class="card">
-            <div style="font-size:16px; font-weight:800;">Recommendations</div>
+            <div style="font-size:16px; font-weight:800;">💡 Why these videos rank high</div>
             <div class="subtitle">Each video includes a short reason for its rank.</div>
         </div>
         """,
@@ -1545,7 +1572,7 @@ with tabs[1]:
         channel = html.escape(str(row["channel"]))
         url = html.escape(str(row["video_url"]))
         location = str(row.get("channel_country", "Unknown")).strip()
-        chip = f"<span class='chip'><span class='chip-dot'></span> Rank {int(row['rank'])}</span>"
+        chip = f"<span class='chip'>#{int(row['rank'])}</span>"
         location_chip = f"<span class='chip'>📍 {location}</span>" if location and location != "Unknown" else ""
 
         st.markdown(
@@ -1558,10 +1585,10 @@ with tabs[1]:
                         {chip}
                     </div>
                 </div>
-                <div class="muted" style="margin-top:6px; font-size:13px;">{channel}</div>
+                <div class="muted" style="margin-top:6px; font-size:13px;">📺 {channel}</div>
                 <div style="margin-top:10px; line-height:1.6; font-size:13px; white-space:pre-wrap;">{html.escape(str(reasons))}</div>
                 <div style="margin-top:10px; font-size:12.5px;">
-                    <a href="{url}" target="_blank" rel="noopener">Open on YouTube</a>
+                    <a href="{url}" target="_blank" rel="noopener">▶️ Watch on YouTube</a>
                 </div>
             </div>
             """,
@@ -1588,7 +1615,7 @@ with tabs[2]:
     st.markdown(
         """
         <div class="card">
-            <div style="font-size:16px; font-weight:800;">Explore</div>
+            <div style="font-size:16px; font-weight:800;">🔬 Explore video details</div>
             <div class="subtitle">Inspect one video and its sampled comments.</div>
         </div>
         """,
@@ -1607,7 +1634,7 @@ with tabs[2]:
             x="final_score",
             y="title_short",
             orientation="h",
-            title="Top scores (first 30)",
+            title="📊 Score distribution (first 30)",
         )
         fig.update_layout(
             height=520,
@@ -1628,13 +1655,13 @@ with tabs[2]:
             dom = s_counts.idxmax()
             dom_pct = (s_counts.max() / len(dc)) * 100
             center = f"{dom}<br>{dom_pct:.0f}%"
-            fig2 = donut_chart(s_counts, "Overall comment sentiment", center)
+            fig2 = donut_chart(s_counts, "💬 Comment sentiment", center)
             st.plotly_chart(fig2, use_container_width=True, key="explore_overall_donut")
         else:
             st.markdown(
                 """
                 <div class="card-soft">
-                    <div style="font-size:16px; font-weight:800;">No comments sampled</div>
+                    <div style="font-weight:800;">💬 No comments</div>
                     <div class="subtitle">Some videos may block comments or restrict access.</div>
                 </div>
                 """,
@@ -1643,7 +1670,7 @@ with tabs[2]:
 
     st.markdown("")
     pick = st.selectbox(
-        "Video",
+        "🎬 Select a video",
         options=dv["video_id"].tolist(),
         format_func=lambda x: dv.loc[dv["video_id"] == x, "title"].values[0][:80],
         key="explore_video_pick",
@@ -1656,22 +1683,22 @@ with tabs[2]:
 
     k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Views</div><div class='metric-v'>{int(row.get('views',0)):,}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>👁️ Views</div><div class='metric-v'>{int(row.get('views',0)):,}</div></div>", unsafe_allow_html=True)
     with k2:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Likes</div><div class='metric-v'>{int(row.get('likes',0)):,}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>👍 Likes</div><div class='metric-v'>{int(row.get('likes',0)):,}</div></div>", unsafe_allow_html=True)
     with k3:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Comments</div><div class='metric-v'>{int(row.get('comment_count',0)):,}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>💬 Comments</div><div class='metric-v'>{int(row.get('comment_count',0)):,}</div></div>", unsafe_allow_html=True)
     with k4:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Rank</div><div class='metric-v'>{int(row.get('rank',0))}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>🏆 Rank</div><div class='metric-v'>#{int(row.get('rank',0))}</div></div>", unsafe_allow_html=True)
     with k5:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Location</div><div class='metric-v'>{location}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>📍 Location</div><div class='metric-v'>{location}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
     if v_url:
         st.markdown(
             f"""
             <div class="card-soft">
-                <div style="font-weight:800;">Video link</div>
+                <div style="font-weight:800;">▶️ Watch now</div>
                 <div style="margin-top:8px;"><a href="{v_url_safe}" target="_blank" rel="noopener">Open on YouTube</a></div>
             </div>
             """,
@@ -1689,19 +1716,19 @@ with tabs[2]:
             f1, f2, f3 = st.columns([1.2, 1.2, 1])
             with f1:
                 sentiment_filter = st.multiselect(
-                    "Filter sentiment",
+                    "Filter by sentiment",
                     options=["Positive", "Neutral", "Negative"],
                     default=["Positive", "Neutral", "Negative"],
                     key="explore_sent_filter",
                 )
             with f2:
                 sort_by = st.selectbox(
-                    "Sort by",
+                    "Sort comments",
                     options=["Newest", "Oldest", "Most Likes", "Highest Sentiment", "Lowest Sentiment"],
                     key="explore_sort_by",
                 )
             with f3:
-                n_show = st.slider("Rows", 10, 80, 20, key="explore_rows")
+                n_show = st.slider("Show rows", 10, 80, 20, key="explore_rows")
 
             dcv = dcv[dcv["sentiment"].isin(sentiment_filter)]
             mapping = {
@@ -1741,8 +1768,8 @@ with tabs[3]:
     st.markdown(
         """
         <div class="card">
-            <div style="font-size:16px; font-weight:800;">Export</div>
-            <div class="subtitle">Download rankings and sampled comments.</div>
+            <div style="font-size:16px; font-weight:800;">📥 Export data</div>
+            <div class="subtitle">Download rankings and sampled comments as CSV files.</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1752,6 +1779,7 @@ with tabs[3]:
     summary = dv.copy()
     summary["generated_at"] = res["generated_at"]
     summary["location_filter"] = res.get("location_filter", "Global")
+    summary["search_query"] = res.get("search_query", res.get("topic", ""))
     summary = summary[
         [
             "rank",
@@ -1777,13 +1805,14 @@ with tabs[3]:
             "video_url",
             "generated_at",
             "location_filter",
+            "search_query",
         ]
     ]
 
     e1, e2 = st.columns(2)
     with e1:
         st.download_button(
-            "Download rankings CSV",
+            "📥 Download rankings CSV",
             data=summary.to_csv(index=False).encode("utf-8"),
             file_name=f"batsirai_rankings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
@@ -1791,7 +1820,7 @@ with tabs[3]:
         )
     with e2:
         st.download_button(
-            "Download sampled comments CSV",
+            "📥 Download comments CSV",
             data=dc.to_csv(index=False).encode("utf-8"),
             file_name=f"batsirai_comments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
@@ -1803,7 +1832,7 @@ st.markdown(
     f"""
     <div class="card-soft" style="text-align:center;">
         <div style="font-weight:800;">{APP_NAME} v{APP_VERSION}</div>
-        <div class="subtitle">Secure session • {datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
+        <div class="subtitle">🔍 YouTube search with sentiment analysis • {datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -1813,6 +1842,6 @@ st.markdown("")
 
 logout_c1, logout_c2, logout_c3 = st.columns([1, 1, 1])
 with logout_c2:
-    if st.button("Logout", use_container_width=True):
+    if st.button("🚪 Logout", use_container_width=True):
         logout()
         
