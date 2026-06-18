@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import html
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from textblob import TextBlob
 import plotly.graph_objects as go
 import plotly.express as px
@@ -12,10 +13,12 @@ import time
 import os
 import hashlib
 import warnings
+import json
+from functools import lru_cache
 
 warnings.filterwarnings("ignore")
 
-APP_VERSION = "3.4.0"
+APP_VERSION = "3.5.0"
 APP_NAME = "Batsirai"
 DEPLOYMENT_MODE = os.environ.get("DEPLOYMENT_MODE", "production")
 SESSION_TIMEOUT_MINUTES = 60
@@ -49,16 +52,16 @@ ORG_PASSWORD = get_org_password()
 
 # Geographic coordinates for regions
 REGION_COORDINATES = {
-    "ZW": {"lat": -19.0154, "lon": 29.1549, "radius": "200km"},  # Zimbabwe
-    "ZA": {"lat": -30.5595, "lon": 22.9375, "radius": "500km"},  # South Africa
-    "GB": {"lat": 55.3781, "lon": -3.4360, "radius": "300km"},   # United Kingdom
-    "US": {"lat": 37.0902, "lon": -95.7129, "radius": "500km"},  # United States
-    "IN": {"lat": 20.5937, "lon": 78.9629, "radius": "500km"},   # India
-    "NG": {"lat": 9.0820, "lon": 8.6753, "radius": "400km"},     # Nigeria
-    "KE": {"lat": -1.2864, "lon": 36.8172, "radius": "300km"},   # Kenya
-    "GH": {"lat": 7.9465, "lon": -1.0232, "radius": "300km"},    # Ghana
-    "AU": {"lat": -25.2744, "lon": 133.7751, "radius": "500km"}, # Australia
-    "CA": {"lat": 56.1304, "lon": -106.3468, "radius": "500km"}, # Canada
+    "ZW": {"lat": -19.0154, "lon": 29.1549, "radius": "200km", "name": "Zimbabwe"},
+    "ZA": {"lat": -30.5595, "lon": 22.9375, "radius": "500km", "name": "South Africa"},
+    "GB": {"lat": 55.3781, "lon": -3.4360, "radius": "300km", "name": "United Kingdom"},
+    "US": {"lat": 37.0902, "lon": -95.7129, "radius": "500km", "name": "United States"},
+    "IN": {"lat": 20.5937, "lon": 78.9629, "radius": "500km", "name": "India"},
+    "NG": {"lat": 9.0820, "lon": 8.6753, "radius": "400km", "name": "Nigeria"},
+    "KE": {"lat": -1.2864, "lon": 36.8172, "radius": "300km", "name": "Kenya"},
+    "GH": {"lat": 7.9465, "lon": -1.0232, "radius": "300km", "name": "Ghana"},
+    "AU": {"lat": -25.2744, "lon": 133.7751, "radius": "500km", "name": "Australia"},
+    "CA": {"lat": 56.1304, "lon": -106.3468, "radius": "500km", "name": "Canada"},
 }
 
 THEME = {
@@ -445,6 +448,10 @@ if "topic_results" not in st.session_state:
     st.session_state.topic_results = None
 if "topic_query" not in st.session_state:
     st.session_state.topic_query = ""
+if "api_call_count" not in st.session_state:
+    st.session_state.api_call_count = 0
+if "api_error" not in st.session_state:
+    st.session_state.api_error = None
 
 def login_screen():
     st.markdown('<div style="height: 1.8rem;"></div>', unsafe_allow_html=True)
@@ -488,17 +495,37 @@ if not st.session_state.authenticated:
 
 touch()
 
+@st.cache_resource
 def youtube_client():
+    """Initialize YouTube client with caching to avoid rebuilding"""
     try:
         api_key = st.secrets["youtube_api_key"]
     except Exception:
         api_key = None
 
     if not api_key or not str(api_key).strip():
-        st.error("Missing YouTube API key. Add youtube_api_key in Streamlit secrets.")
+        st.session_state.api_error = "Missing YouTube API key. Please add youtube_api_key to secrets."
         return None
 
-    return build("youtube", "v3", developerKey=str(api_key).strip())
+    try:
+        # Test the API key with a minimal request
+        test_client = build("youtube", "v3", developerKey=str(api_key).strip())
+        # Make a minimal test call
+        test_client.search().list(
+            part="snippet",
+            q="test",
+            maxResults=1
+        ).execute()
+        return build("youtube", "v3", developerKey=str(api_key).strip())
+    except HttpError as e:
+        if e.resp.status == 403:
+            st.session_state.api_error = "API key quota exceeded or key invalid. Please check your YouTube API quota."
+        else:
+            st.session_state.api_error = f"YouTube API error: {str(e)}"
+        return None
+    except Exception as e:
+        st.session_state.api_error = f"Failed to initialize YouTube client: {str(e)}"
+        return None
 
 STOPWORDS = set("""
 a about above after again against all am an and any are as at be because been before being below between both but by
@@ -548,17 +575,20 @@ def parse_published_at(s):
 def get_video_comments(youtube, video_id, max_comments=150):
     all_comments = []
     next_page_token = None
+    attempts = 0
+    max_attempts = 2
 
-    while len(all_comments) < max_comments:
+    while len(all_comments) < max_comments and attempts < max_attempts:
         try:
             request = youtube.commentThreads().list(
                 part="snippet",
                 videoId=video_id,
-                maxResults=100,
+                maxResults=min(100, max_comments - len(all_comments)),
                 pageToken=next_page_token,
                 textFormat="plainText",
             )
             response = request.execute()
+            st.session_state.api_call_count += 1
 
             for item in response.get("items", []):
                 s = item["snippet"]["topLevelComment"]["snippet"]
@@ -578,11 +608,17 @@ def get_video_comments(youtube, video_id, max_comments=150):
             if not next_page_token:
                 break
 
-        except Exception as e:
-            msg = str(e)
-            if "commentsDisabled" in msg:
-                return []
-            return []
+        except HttpError as e:
+            if e.resp.status == 403:
+                # Quota exceeded - stop gracefully
+                break
+            elif "commentsDisabled" in str(e):
+                break
+            attempts += 1
+            time.sleep(1)
+        except Exception:
+            attempts += 1
+            time.sleep(1)
 
     return all_comments
 
@@ -599,6 +635,8 @@ def analyze_sentiment_comment(text):
 def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", published_after=None, region_code=None, location_filter=None):
     results = []
     next_page_token = None
+    attempts = 0
+    max_attempts = 2
     
     # Build search parameters
     search_params = {
@@ -619,14 +657,14 @@ def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", pub
         search_params["location"] = f"{coords['lat']},{coords['lon']}"
         search_params["locationRadius"] = coords['radius']
     elif region_code:
-        # Use region code as fallback (affects search relevance, not location)
         search_params["regionCode"] = region_code
 
-    while len(results) < max_videos:
+    while len(results) < max_videos and attempts < max_attempts:
         try:
             search_params["pageToken"] = next_page_token
             request = youtube.search().list(**search_params)
             resp = request.execute()
+            st.session_state.api_call_count += 1
             
             for item in resp.get("items", []):
                 vid = item.get("id", {}).get("videoId")
@@ -634,29 +672,13 @@ def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", pub
                 if not vid:
                     continue
                 
-                # Additional verification - check if video is actually from the requested region
-                # by examining the channel country if available
-                channel_id = sn.get("channelId", "")
-                channel_country = None
-                if channel_id:
-                    try:
-                        channel_resp = youtube.channels().list(
-                            part="snippet",
-                            id=channel_id
-                        ).execute()
-                        if channel_resp.get("items"):
-                            channel_country = channel_resp["items"][0].get("snippet", {}).get("country", "")
-                    except:
-                        pass
-                
                 results.append(
                     {
                         "video_id": vid,
                         "title": sn.get("title", ""),
                         "description": sn.get("description", ""),
                         "channel": sn.get("channelTitle", ""),
-                        "channel_id": channel_id,
-                        "channel_country": channel_country,
+                        "channel_id": sn.get("channelId", ""),
                         "published_at": sn.get("publishedAt", ""),
                     }
                 )
@@ -667,55 +689,74 @@ def search_videos_by_topic(youtube, topic, max_videos=30, order="relevance", pub
             if not next_page_token:
                 break
 
-        except Exception as e:
-            print(f"Search error: {e}")
-            break
+        except HttpError as e:
+            if e.resp.status == 403:
+                # Quota exceeded
+                st.session_state.api_error = "YouTube API quota exceeded. Please try again later or use fewer videos/comments."
+                break
+            attempts += 1
+            time.sleep(1)
+        except Exception:
+            attempts += 1
+            time.sleep(1)
 
     return results
 
-def fetch_video_stats(youtube, video_ids):
+def fetch_video_stats(youtube, video_ids, max_retries=2):
     out = {}
     for i in range(0, len(video_ids), 50):
         chunk = video_ids[i : i + 50]
-        try:
-            resp = youtube.videos().list(part="snippet,statistics,contentDetails", id=",".join(chunk)).execute()
-            for item in resp.get("items", []):
-                vid = item.get("id")
-                stats = item.get("statistics", {}) or {}
-                sn = item.get("snippet", {}) or {}
-                cd = item.get("contentDetails", {}) or {}
+        retries = 0
+        while retries < max_retries:
+            try:
+                resp = youtube.videos().list(
+                    part="snippet,statistics,contentDetails", 
+                    id=",".join(chunk)
+                ).execute()
+                st.session_state.api_call_count += 1
                 
-                # Get video duration
-                duration = cd.get("duration", "")
-                
-                # Get channel country
-                channel_id = sn.get("channelId", "")
-                channel_country = None
-                if channel_id:
-                    try:
-                        channel_resp = youtube.channels().list(
-                            part="snippet",
-                            id=channel_id
-                        ).execute()
-                        if channel_resp.get("items"):
-                            channel_country = channel_resp["items"][0].get("snippet", {}).get("country", "")
-                    except:
-                        pass
-                
-                out[vid] = {
-                    "views": int(stats.get("viewCount", 0) or 0),
-                    "likes": int(stats.get("likeCount", 0) or 0),
-                    "comment_count": int(stats.get("commentCount", 0) or 0),
-                    "title": sn.get("title", ""),
-                    "channel": sn.get("channelTitle", ""),
-                    "channel_id": channel_id,
-                    "channel_country": channel_country,
-                    "published_at": sn.get("publishedAt", ""),
-                    "description": sn.get("description", ""),
-                    "duration": duration,
-                }
-        except Exception:
-            continue
+                for item in resp.get("items", []):
+                    vid = item.get("id")
+                    stats = item.get("statistics", {}) or {}
+                    sn = item.get("snippet", {}) or {}
+                    cd = item.get("contentDetails", {}) or {}
+                    
+                    # Get channel country
+                    channel_id = sn.get("channelId", "")
+                    channel_country = None
+                    if channel_id:
+                        try:
+                            channel_resp = youtube.channels().list(
+                                part="snippet",
+                                id=channel_id
+                            ).execute()
+                            st.session_state.api_call_count += 1
+                            if channel_resp.get("items"):
+                                channel_country = channel_resp["items"][0].get("snippet", {}).get("country", "")
+                        except:
+                            pass
+                    
+                    out[vid] = {
+                        "views": int(stats.get("viewCount", 0) or 0),
+                        "likes": int(stats.get("likeCount", 0) or 0),
+                        "comment_count": int(stats.get("commentCount", 0) or 0),
+                        "title": sn.get("title", ""),
+                        "channel": sn.get("channelTitle", ""),
+                        "channel_id": channel_id,
+                        "channel_country": channel_country,
+                        "published_at": sn.get("publishedAt", ""),
+                        "description": sn.get("description", ""),
+                        "duration": cd.get("duration", ""),
+                    }
+                break
+            except HttpError as e:
+                if e.resp.status == 403:
+                    break
+                retries += 1
+                time.sleep(1)
+            except Exception:
+                retries += 1
+                time.sleep(1)
     return out
 
 def donut_chart(sentiment_counts, title, center_text):
@@ -784,7 +825,6 @@ def build_reasons(row):
     if row.get("freshness_days", 9999) <= 30:
         reasons.append("Fresh upload, the discussion is current.")
         
-    # Add location info if available
     if row.get("channel_country"):
         reasons.append(f"Channel is based in {row.get('channel_country')}.")
 
@@ -1002,6 +1042,9 @@ def build_final_answer(res: dict):
     }
 
 def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window_days, region_code, location_filter):
+    # Reset API error
+    st.session_state.api_error = None
+    
     yt = youtube_client()
     if yt is None:
         return None
@@ -1016,12 +1059,10 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         published_after = dt.isoformat().replace("+00:00", "Z")
 
     # Enhanced search with better query construction
-    # Add location context to the search query if location filter is set
     search_topic = topic
     if location_filter and location_filter in REGION_COORDINATES:
-        # Add location context to improve relevance
-        location_context = REGION_COORDINATES[location_filter]
-        search_topic = f"{topic} {location_filter}"
+        location_name = REGION_COORDINATES[location_filter]["name"]
+        search_topic = f"{topic} {location_name}"
 
     videos = search_videos_by_topic(
         yt,
@@ -1032,7 +1073,12 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         region_code=region_code,
         location_filter=location_filter,
     )
+    
     if not videos:
+        if st.session_state.api_error:
+            st.error(st.session_state.api_error)
+        else:
+            st.error("No videos found. Try a different topic or check your search parameters.")
         return None
 
     ids = [v["video_id"] for v in videos]
@@ -1052,11 +1098,14 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         desc = meta.get("description") or next((x["description"] for x in videos if x["video_id"] == vid), "")
         channel = meta.get("channel") or next((x["channel"] for x in videos if x["video_id"] == vid), "")
         published_at = meta.get("published_at") or next((x["published_at"] for x in videos if x["video_id"] == vid), "")
-        channel_country = meta.get("channel_country") or next((x.get("channel_country") for x in videos if x["video_id"] == vid), None)
+        channel_country = meta.get("channel_country") or None
 
         status.markdown(f"<div class='muted'>Scanning video {idx} of {len(ids)}...</div>", unsafe_allow_html=True)
 
-        comments = get_video_comments(yt, vid, max_comments=comments_per_video)
+        # Only fetch comments if we have quota and it makes sense
+        comments = []
+        if comments_per_video > 0 and not st.session_state.api_error:
+            comments = get_video_comments(yt, vid, max_comments=comments_per_video)
 
         dfc = pd.DataFrame(comments) if comments else pd.DataFrame(columns=["video_id", "comment", "published_at", "like_count", "author"])
         if not dfc.empty:
@@ -1167,11 +1216,13 @@ def run_topic_analysis(topic, max_videos, comments_per_video, order, time_window
         "comments_df": pd.DataFrame(comment_rows) if comment_rows else pd.DataFrame(columns=["video_id", "comment", "published_at", "like_count", "author", "sentiment_score", "sentiment"]),
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "location_filter": location_filter,
+        "api_calls": st.session_state.api_call_count,
     }
 
     res["final_answer"] = build_final_answer(res)
     return res
 
+# Main UI
 st.markdown(
     f"""
     <div class="hero" style="text-align:center;">
@@ -1188,6 +1239,10 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# Show API status if there's an error
+if st.session_state.api_error:
+    st.warning(f"⚠️ {st.session_state.api_error}")
 
 st.markdown("")
 
@@ -1217,9 +1272,11 @@ with tabs[0]:
 
     r1, r2, r3, r4 = st.columns([1.1, 1.1, 1.1, 1.2])
     with r1:
-        max_videos = st.slider("Videos to scan", 10, 80, 30, step=5)
+        max_videos = st.slider("Videos to scan", 5, 50, 20, step=5, 
+                              help="Lower this if you're hitting quota limits")
     with r2:
-        comments_per_video = st.slider("Comments per video", 50, 300, 150, step=25)
+        comments_per_video = st.slider("Comments per video", 20, 150, 80, step=10,
+                                      help="Lower this to save quota")
     with r3:
         time_window_days = st.selectbox(
             "Time window",
@@ -1232,7 +1289,7 @@ with tabs[0]:
             "Location filter",
             options=["Global"] + list(REGION_COORDINATES.keys()),
             index=0,
-            format_func=lambda x: "Global (all locations)" if x == "Global" else x,
+            format_func=lambda x: "Global (all locations)" if x == "Global" else REGION_COORDINATES[x]["name"],
         )
 
     b1, b2 = st.columns([1, 5])
@@ -1242,6 +1299,7 @@ with tabs[0]:
         if st.button("Clear results", use_container_width=True):
             st.session_state.topic_results = None
             st.session_state.topic_query = ""
+            st.session_state.api_error = None
             safe_rerun()
 
     if run:
@@ -1250,6 +1308,9 @@ with tabs[0]:
             st.error("Type a topic first.")
         else:
             st.session_state.topic_query = topic_clean
+            st.session_state.api_call_count = 0
+            st.session_state.api_error = None
+            
             with st.spinner("Searching and analyzing videos..."):
                 res = run_topic_analysis(
                     topic=topic_clean,
@@ -1260,11 +1321,13 @@ with tabs[0]:
                     region_code=None,
                     location_filter=None if location_filter == "Global" else location_filter,
                 )
+            
             if res is None:
-                st.error("No results. Try a different topic or check your API key and quota.")
+                if not st.session_state.api_error:
+                    st.error("No results. Try a different topic or adjust your search parameters.")
             else:
                 st.session_state.topic_results = res
-                st.success("Done. Check Top 10.")
+                st.success(f"Done! Found {len(res['videos_df'])} videos. Check Top 10.")
                 safe_rerun()
 
 with tabs[1]:
@@ -1287,7 +1350,8 @@ with tabs[1]:
 
     location_info = ""
     if res.get("location_filter"):
-        location_info = f" • Location: {res.get('location_filter')}"
+        location_name = REGION_COORDINATES.get(res.get("location_filter"), {}).get("name", res.get("location_filter"))
+        location_info = f" • Location: {location_name}"
 
     st.markdown(
         f"""
@@ -1309,9 +1373,10 @@ with tabs[1]:
     with m2:
         st.markdown(f"<div class='metric'><div class='metric-k'>Avg sentiment</div><div class='metric-v'>{avg_sent:.2f}</div></div>", unsafe_allow_html=True)
     with m3:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Location</div><div class='metric-v'>{res.get('location_filter', 'Global')}</div></div>", unsafe_allow_html=True)
+        location_display = REGION_COORDINATES.get(res.get("location_filter"), {}).get("name", "Global") if res.get("location_filter") else "Global"
+        st.markdown(f"<div class='metric'><div class='metric-k'>Location</div><div class='metric-v'>{location_display}</div></div>", unsafe_allow_html=True)
     with m4:
-        st.markdown(f"<div class='metric'><div class='metric-k'>Generated</div><div class='metric-v'>{res['generated_at']}</div></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='metric'><div class='metric-k'>API Calls</div><div class='metric-v'>{res.get('api_calls', 0)}</div></div>", unsafe_allow_html=True)
 
     st.markdown("")
 
@@ -1388,7 +1453,7 @@ with tabs[1]:
 
         if top_pick and str(top_pick.get("url", "")).strip():
             u = html.escape(top_pick.get("url", ""))
-            location_display = f"Location: {top_pick.get('location', 'Unknown')}" if top_pick.get('location') else ""
+            location_display = f"📍 {top_pick.get('location', 'Unknown')}" if top_pick.get('location') else ""
             st.markdown(
                 f"""
                 <div class="card-soft" style="margin-top: 12px;">
@@ -1750,3 +1815,4 @@ logout_c1, logout_c2, logout_c3 = st.columns([1, 1, 1])
 with logout_c2:
     if st.button("Logout", use_container_width=True):
         logout()
+        
