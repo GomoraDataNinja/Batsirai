@@ -1,3 +1,4 @@
+# Updated requirements - clean version
 streamlit==1.61.0
 pandas
 numpy
