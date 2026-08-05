@@ -1,6 +1,7 @@
-streamlit>=1.63.0
+streamlit==1.61.0
 pandas
 numpy
 plotly
 textblob
 google-api-python-client
+starlette<0.38.0
