@@ -16,6 +16,7 @@ import warnings
 import json
 from functools import lru_cache
 
+
 warnings.filterwarnings("ignore")
 
 APP_VERSION = "3.7.0"
