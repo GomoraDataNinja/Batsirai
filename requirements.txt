@@ -4,4 +4,4 @@ numpy
 plotly
 textblob
 google-api-python-client
-starlette<0.38.0
+starlette==0.37.0
