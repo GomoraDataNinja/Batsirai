@@ -1,5 +1,4 @@
-# Using Python 3.12 via runtime.txt
-streamlit==1.61.0
+streamlit==1.35.0
 pandas
 numpy
 plotly
